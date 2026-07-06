@@ -1,0 +1,145 @@
+import {
+  artifact_export_request,
+  artifact_import_request,
+  call,
+  init,
+  request_descriptor,
+  shutdown,
+} from "../src/lib"
+import { expect, expect_eq } from "./assertions"
+
+pipeline default() {
+  egress_policy({allow: ["www.googleapis.com", "docs.googleapis.com"], default: "deny"})
+  shutdown()
+  init({access_token: "secret_access"})
+  http_mock_clear()
+  let drive = "https://www.googleapis.com/drive/v3"
+  let upload = "https://www.googleapis.com/upload/drive/v3"
+  let docs = "https://docs.googleapis.com/v1"
+  http_mock(
+    "*",
+    "https://www.googleapis.com/*",
+    {
+      responses: [
+        {status: 200, body: "{\"id\":\"file_123\",\"name\":\"Report\"}", headers: {}},
+        {status: 200, body: "{\"files\":[{\"id\":\"file_123\"}]}", headers: {}},
+        {
+          status: 200,
+          body: "{\"id\":\"uploaded\",\"mimeType\":\"application/vnd.google-apps.document\"}",
+          headers: {},
+        },
+        {status: 200, body: "{\"startPageToken\":\"start_123\"}", headers: {}},
+        {
+          status: 200,
+          body: "{\"changes\":[{\"fileId\":\"file_123\",\"file\":{\"id\":\"file_123\",\"name\":\"Report\"}}],\"newStartPageToken\":\"next_123\"}",
+          headers: {},
+        },
+        {status: 200, body: "{\"id\":\"channel_123\",\"resourceId\":\"resource_123\"}", headers: {}},
+      ],
+    },
+  )
+  http_mock(
+    "*",
+    "https://docs.googleapis.com/*",
+    {
+      responses: [
+        {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
+        {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
+        {status: 200, body: "{\"replies\":[]}", headers: {}},
+      ],
+    },
+  )
+  let file = call("drive.files.get", {file_id: "file_123", fields: "id,name"})
+  expect_eq(file.id, "file_123", "files.get response")
+  call("drive.files.list", {q: "name='Report'", page_size: 10})
+  let create_rejected = call("drive.files.create", {name: "Report", mimeType: "application/vnd.google-apps.document"})
+  expect(is_err(create_rejected), "mutating Drive create requires approval")
+  expect_eq(unwrap_err(create_rejected).code, "approval_required", "approval code")
+  call(
+    "drive.files.create",
+    {
+      name: "Report",
+      mimeType: "application/vnd.google-apps.document",
+      upload_type: "multipart",
+      _approved: true,
+    },
+  )
+  call("drive.changes.getStartPageToken", {})
+  call("drive.changes.list", {page_token: "start_123", page_size: 5})
+  call(
+    "drive.changes.watch",
+    {
+      page_token: "start_123",
+      id: "chan_123",
+      type: "web_hook",
+      address: "https://example.test/hook",
+      _approved: true,
+    },
+  )
+  let created = call("docs.documents.create", {title: "Report", _approved: true})
+  expect_eq(created.documentId, "doc_123", "docs create response")
+  call("docs.documents.get", {document_id: "doc_123"})
+  call(
+    "docs.documents.batchUpdate",
+    {
+      document_id: "doc_123",
+      requests: [{insertText: {location: {index: 1}, text: "Hello"}}],
+      _approved: true,
+    },
+  )
+  let calls = http_mock_calls({include_sensitive: true})
+  expect_eq(len(calls), 9, "all expected outbound methods dispatched")
+  expect_eq(calls[0].method, "GET", "files.get uses GET")
+  expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
+  expect_eq(calls[0].headers.authorization, "Bearer secret_access", "authorization header sent")
+  expect_eq(calls[2].url, upload + "/files?uploadType=multipart", "upload URL")
+  let create_body = json_parse(calls[2].body)
+  expect_eq(create_body.name, "Report", "create body name")
+  expect(create_body.access_token == nil, "access token not sent in body")
+  expect_eq(calls[4].url, drive + "/changes?pageSize=5&pageToken=start_123", "changes list URL")
+  let docs_create_body = json_parse(calls[6].body)
+  expect_eq(docs_create_body.title, "Report", "docs create title")
+  expect_eq(calls[8].url, docs + "/documents/doc_123:batchUpdate", "docs batchUpdate URL")
+  let export = artifact_export_request({file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"})
+  expect_eq(export.kind, "artifact_export", "export descriptor kind")
+  expect_eq(export.method, "GET", "export descriptor method")
+  expect_eq(export.artifact.mime_type, "application/pdf", "export artifact mime")
+  let import_request = artifact_import_request(
+    {
+      name: "report.docx",
+      uri: "artifact://session/report.docx",
+      mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      target_mime_type: "application/vnd.google-apps.document",
+      parents: ["folder_123"],
+    },
+  )
+  expect_eq(import_request.kind, "artifact_import", "import descriptor kind")
+  expect_eq(
+    import_request.metadata.mimeType,
+    "application/vnd.google-apps.document",
+    "import target mime",
+  )
+  expect_eq(import_request.media.uri, "artifact://session/report.docx", "import media uri")
+  let descriptor = request_descriptor(
+    "drive.files.export",
+    {access_token: "secret_access", file_id: "file_123", mime_type: "application/pdf"},
+  )
+  expect(!is_err(descriptor), "export request descriptor builds")
+  expect_eq(
+    unwrap(descriptor).url,
+    drive + "/files/file_123/export?mimeType=application%2Fpdf",
+    "export request URL",
+  )
+  let bad_host = call(
+    "drive.files.get",
+    {
+      file_id: "file_123",
+      access_token: "secret_access",
+      drive_api_base_url: "https://evil.example/drive/v3",
+    },
+  )
+  expect(is_err(bad_host), "disallowed api_base_url rejected")
+  expect_eq(unwrap_err(bad_host).code, "disallowed_api_base_url", "disallowed host code")
+  http_mock_clear()
+  shutdown()
+}

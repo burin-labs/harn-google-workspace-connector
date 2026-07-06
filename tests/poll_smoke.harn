@@ -1,0 +1,134 @@
+import { init, poll_tick, shutdown } from "../src/lib"
+import { expect, expect_eq } from "./assertions"
+
+fn poll_ctx(cursor = nil, state = nil, extra = nil) {
+  return {
+    provider_id: "google_workspace",
+    binding_id: "google.drive.poll",
+    tick_at: "2026-07-06T12:00:00Z",
+    cursor: cursor,
+    state: state,
+    max_batch_size: 10,
+    binding: {
+      id: "google.drive.poll",
+      kind: "poll",
+      config: {
+        poll: {page_token: "start_123", page_size: 2, supports_all_drives: true},
+        access_token: "secret_access",
+      },
+    },
+  }
+    + (extra ?? {})
+}
+
+fn changes_body(changes, next_token = nil) {
+  return json_stringify({changes: changes, newStartPageToken: next_token})
+}
+
+fn file_change(id, modified, removed = false) {
+  return {
+    fileId: id,
+    removed: removed,
+    file: {
+      id: id,
+      name: "Report " + id,
+      mimeType: "application/vnd.google-apps.document",
+      modifiedTime: modified,
+      webViewLink: "https://docs.google.com/document/d/" + id + "/edit",
+    },
+  }
+}
+
+pipeline default() {
+  egress_policy({allow: ["www.googleapis.com"], default: "deny"})
+  shutdown()
+  init({access_token: "secret_access"})
+  http_mock_clear()
+  let base = "https://www.googleapis.com/drive/v3"
+  http_mock(
+    "GET",
+    base + "/changes*",
+    {
+      responses: [
+        {
+          status: 200,
+          body: changes_body([file_change("file_1", "2026-07-06T11:00:00Z")], "next_1"),
+          headers: {},
+        },
+        {
+          status: 200,
+          body: changes_body([file_change("file_2", "2026-07-06T11:05:00Z")], "next_2"),
+          headers: {},
+        },
+        {
+          status: 503,
+          body: "{\"error\":{\"status\":\"UNAVAILABLE\",\"message\":\"try again\"}}",
+          headers: {},
+        },
+        {
+          status: 200,
+          body: changes_body([file_change("file_3", "2026-07-06T11:10:00Z", true)], "next_3"),
+          headers: {},
+        },
+      ],
+    },
+  )
+  let first = poll_tick(poll_ctx({page_token: "start_123"}))
+  expect_eq(len(first.events), 1, "first tick emits one normalized event")
+  expect_eq(first.events[0].kind, "google_workspace.drive.file_changed", "poll event kind")
+  expect_eq(first.events[0].payload.file_id, "file_1", "poll file id")
+  expect_eq(
+    first.events[0].payload.mime_type,
+    "application/vnd.google-apps.document",
+    "poll mime type",
+  )
+  expect_eq(first.cursor.page_token, "next_1", "first tick advances cursor")
+  expect(
+    first.state.poll_cache.get("google.drive.poll:file_1") != nil,
+    "first tick persists snapshot",
+  )
+  let second = poll_tick(poll_ctx(first.cursor, first.state))
+  expect_eq(len(second.events), 1, "second tick emits one changed file")
+  expect_eq(second.events[0].payload.file_id, "file_2", "second file id")
+  expect_eq(second.cursor.page_token, "next_2", "second tick advances cursor")
+  let failed = poll_tick(poll_ctx(second.cursor, second.state))
+  expect(is_err(failed), "retryable Google failures return Err without advancing local state")
+  expect_eq(unwrap_err(failed).code, "UNAVAILABLE", "retry error preserves Google status")
+  let retried = poll_tick(poll_ctx(second.cursor, second.state))
+  expect_eq(len(retried.events), 1, "retry with same cursor can emit after transient failure")
+  expect_eq(retried.events[0].kind, "google_workspace.drive.file_removed", "removed kind")
+  expect_eq(retried.events[0].payload.removed, true, "removed payload")
+  let calls = http_mock_calls({include_sensitive: true})
+  expect_eq(len(calls), 4, "one Drive changes request per tick")
+  expect_eq(
+    calls[0].url,
+    base
+      + "/changes?includeItemsFromAllDrives=true&pageSize=10&pageToken=start_123&supportsAllDrives=true",
+    "first changes URL",
+  )
+  expect_eq(
+    calls[1].url,
+    base
+      + "/changes?includeItemsFromAllDrives=true&pageSize=10&pageToken=next_1&supportsAllDrives=true",
+    "second changes URL",
+  )
+  expect_eq(
+    calls[3].url,
+    base
+      + "/changes?includeItemsFromAllDrives=true&pageSize=10&pageToken=next_2&supportsAllDrives=true",
+    "retry URL",
+  )
+  http_mock_clear()
+  http_mock(
+    "GET",
+    base + "/changes*",
+    {
+      status: 200,
+      body: changes_body([file_change("file_1", "2026-07-06T11:00:00Z")], "next_1"),
+      headers: {},
+    },
+  )
+  let duplicate = poll_tick(poll_ctx({page_token: "start_123"}, first.state))
+  expect_eq(len(duplicate.events), 0, "persisted state dedupes identical file snapshot")
+  shutdown()
+}

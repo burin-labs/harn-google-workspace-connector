@@ -1,0 +1,43 @@
+import { activate, init, kinds, payload_schema, provider_id, shutdown } from "../src/lib"
+
+/** Assert the exported connector lifecycle/interface surface. */
+pub fn assert_google_workspace_interface() {
+  shutdown()
+  require provider_id() == "google_workspace", "provider id"
+  require kinds() == ["webhook", "poll"], "supported kinds"
+  require payload_schema().harn_schema_name == "GoogleWorkspaceEventPayload", "payload schema name"
+  let initialized = init({channel_token: "test-token", access_token: "secret_access"})
+  require initialized.initialized, "init stores state"
+  let activated = activate(
+    [
+      {
+        id: "google.drive.watch",
+        kind: "webhook",
+        path: "/hooks/google/drive",
+        secrets: {channel_token: "test-token"},
+      },
+      {
+        id: "google.drive.poll",
+        kind: "poll",
+        poll: {page_token: "start-token", page_size: 25},
+        access_token: "secret_access",
+      },
+    ],
+  )
+  require activated.bindings == 2, "activate counts bindings"
+  require activated.webhook_bindings == 1, "activate counts webhook bindings"
+  require activated.poll_bindings == 1, "activate counts poll bindings"
+}
+
+/** Build Google Drive push-channel headers. */
+pub fn drive_push_headers(token = "test-token", extra = nil) {
+  return {
+    "x-goog-channel-id": "chan_123",
+    "x-goog-resource-id": "resource_123",
+    "x-goog-resource-state": "update",
+    "x-goog-resource-uri": "https://www.googleapis.com/drive/v3/files/file_123",
+    "x-goog-message-number": "42",
+    "x-goog-channel-token": token,
+  }
+    + (extra ?? {})
+}

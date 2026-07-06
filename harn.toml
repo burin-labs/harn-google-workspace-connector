@@ -1,0 +1,69 @@
+[package]
+name = "harn-google-workspace-connector"
+version = "0.1.0"
+description = "Pure-Harn Google Workspace connector for Drive/Docs artifacts, webhooks, polling, and outbound API dispatch."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/burin-labs/harn-google-workspace-connector"
+harn = ">=0.9,<0.10"
+docs_url = "README.md"
+provenance = "https://github.com/burin-labs/harn-google-workspace-connector/releases/tag/v0.1.0"
+
+[exports]
+default = "src/lib.harn"
+
+[[providers]]
+id = "google_workspace"
+connector = { harn = "src/lib.harn" }
+capabilities = ["webhook", "oauth", "pagination"]
+
+[providers.oauth]
+resource = "https://www.googleapis.com/"
+authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
+token_endpoint = "https://oauth2.googleapis.com/token"
+scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
+token_endpoint_auth_method = "client_secret_post"
+
+[providers.setup]
+auth_type = "oauth2"
+flow = "browser"
+required_scopes = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/documents",
+]
+required_secrets = ["google-workspace/access-token", "google-workspace/channel-token"]
+setup_command = ["harn", "connect", "google-workspace"]
+validation_command = ["harn", "connect", "status", "--connector", "google_workspace", "--json"]
+
+[[providers.setup.health_checks]]
+id = "access-token"
+kind = "secret"
+secret = "google-workspace/access-token"
+
+[[providers.setup.health_checks]]
+id = "channel-token"
+kind = "secret"
+secret = "google-workspace/channel-token"
+
+[providers.setup.recovery]
+missing_auth = "Store google-workspace/access-token before enabling Google Workspace bindings."
+expired_credentials = "Refresh the OAuth access token and rerun Google Workspace validation."
+revoked_credentials = "Reauthorize Google Workspace and replace google-workspace/access-token."
+missing_scopes = "Grant Drive file and Docs scopes required by the configured artifact workflow."
+inaccessible_resource = "Confirm the selected Drive file or folder is visible to the authorized account."
+transient_provider_outage = "Retry after Google Workspace APIs and push channels are healthy."
+
+[dependencies]
+
+[connector_contract]
+version = 1
+
+[[connector_contract.fixtures]]
+provider = "google_workspace"
+name = "drive file push notification"
+kind = "webhook"
+headers = { "x-goog-channel-id" = "chan_123", "x-goog-resource-id" = "resource_123", "x-goog-resource-state" = "update", "x-goog-message-number" = "42", "x-goog-channel-token" = "fixture-token" }
+metadata = { channel_token = "fixture-token", binding_id = "google.drive.watch" }
+body = ""
+expect_type = "event"
+expect_kind = "google_workspace.drive.update"
+expect_event_count = 1
