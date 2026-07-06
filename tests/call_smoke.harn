@@ -9,13 +9,16 @@ import {
 import { expect, expect_eq } from "./assertions"
 
 pipeline default() {
-  egress_policy({allow: ["www.googleapis.com", "docs.googleapis.com"], default: "deny"})
+  egress_policy(
+    {allow: ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"], default: "deny"},
+  )
   shutdown()
   init({access_token: "secret_access"})
   http_mock_clear()
   let drive = "https://www.googleapis.com/drive/v3"
   let upload = "https://www.googleapis.com/upload/drive/v3"
   let docs = "https://docs.googleapis.com/v1"
+  let gmail = "https://gmail.googleapis.com/gmail/v1"
   http_mock(
     "*",
     "https://www.googleapis.com/*",
@@ -46,6 +49,21 @@ pipeline default() {
         {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
         {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
         {status: 200, body: "{\"replies\":[]}", headers: {}},
+      ],
+    },
+  )
+  http_mock(
+    "*",
+    "https://gmail.googleapis.com/*",
+    {
+      responses: [
+        {status: 200, body: "{\"messages\":[{\"id\":\"msg_123\",\"threadId\":\"thread_1\"}]}", headers: {}},
+        {
+          status: 200,
+          body: "{\"id\":\"msg_123\",\"threadId\":\"thread_1\",\"payload\":{\"headers\":[{\"name\":\"Subject\",\"value\":\"Your receipt\"}],\"parts\":[{\"filename\":\"receipt.pdf\",\"body\":{\"attachmentId\":\"att_123\",\"size\":12}}]}}",
+          headers: {},
+        },
+        {status: 200, body: "{\"data\":\"cmVjZWlwdA\",\"size\":7}", headers: {}},
       ],
     },
   )
@@ -87,8 +105,14 @@ pipeline default() {
       _approved: true,
     },
   )
+  let gmail_messages = call("gmail.messages.list", {q: "receipt newer_than:30d", max_results: 5})
+  expect_eq(gmail_messages.messages[0].id, "msg_123", "gmail messages.list response")
+  let gmail_message = call("gmail.messages.get", {message_id: "msg_123", format: "full"})
+  expect_eq(gmail_message.id, "msg_123", "gmail messages.get response")
+  let attachment = call("gmail.messages.attachments.get", {message_id: "msg_123", attachment_id: "att_123"})
+  expect_eq(attachment.data, "cmVjZWlwdA", "gmail attachment response")
   let calls = http_mock_calls({include_sensitive: true})
-  expect_eq(len(calls), 9, "all expected outbound methods dispatched")
+  expect_eq(len(calls), 12, "all expected outbound methods dispatched")
   expect_eq(calls[0].method, "GET", "files.get uses GET")
   expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
   expect_eq(calls[0].headers.authorization, "Bearer secret_access", "authorization header sent")
@@ -100,6 +124,18 @@ pipeline default() {
   let docs_create_body = json_parse(calls[6].body)
   expect_eq(docs_create_body.title, "Report", "docs create title")
   expect_eq(calls[8].url, docs + "/documents/doc_123:batchUpdate", "docs batchUpdate URL")
+  expect_eq(
+    calls[9].url,
+    gmail + "/users/me/messages?maxResults=5&q=receipt%20newer_than%3A30d",
+    "gmail list URL",
+  )
+  expect_eq(calls[9].headers.authorization, "Bearer secret_access", "gmail authorization header")
+  expect_eq(calls[10].url, gmail + "/users/me/messages/msg_123?format=full", "gmail get URL")
+  expect_eq(
+    calls[11].url,
+    gmail + "/users/me/messages/msg_123/attachments/att_123",
+    "gmail attachment URL",
+  )
   let export = artifact_export_request({file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"})
   expect_eq(export.kind, "artifact_export", "export descriptor kind")
   expect_eq(export.method, "GET", "export descriptor method")
