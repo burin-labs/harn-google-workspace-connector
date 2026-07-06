@@ -1,0 +1,4 @@
+.harn/
+.harn-cli/
+harn.lock
+*.tmp
