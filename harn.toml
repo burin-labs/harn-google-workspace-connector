@@ -1,7 +1,7 @@
 [package]
 name = "harn-google-workspace-connector"
-version = "0.1.0"
-description = "Pure-Harn Google Workspace connector for Drive/Docs artifacts, webhooks, polling, and outbound API dispatch."
+version = "0.1.1"
+description = "Pure-Harn Google Workspace connector for Drive/Docs/Gmail artifacts, webhooks, polling, and outbound API dispatch."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/burin-labs/harn-google-workspace-connector"
 harn = ">=0.9,<0.10"
@@ -20,7 +20,7 @@ capabilities = ["webhook", "oauth", "pagination"]
 resource = "https://www.googleapis.com/"
 authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
 token_endpoint = "https://oauth2.googleapis.com/token"
-scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
+scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.readonly"
 token_endpoint_auth_method = "client_secret_post"
 
 [providers.setup]
@@ -29,26 +29,22 @@ flow = "browser"
 required_scopes = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/gmail.readonly",
 ]
-required_secrets = ["google-workspace/access-token", "google-workspace/channel-token"]
-setup_command = ["harn", "connect", "google-workspace"]
+required_secrets = ["google_workspace/access-token"]
+setup_command = ["harn", "connect", "google_workspace"]
 validation_command = ["harn", "connect", "status", "--connector", "google_workspace", "--json"]
 
 [[providers.setup.health_checks]]
 id = "access-token"
 kind = "secret"
-secret = "google-workspace/access-token"
-
-[[providers.setup.health_checks]]
-id = "channel-token"
-kind = "secret"
-secret = "google-workspace/channel-token"
+secret = "google_workspace/access-token"
 
 [providers.setup.recovery]
-missing_auth = "Store google-workspace/access-token before enabling Google Workspace bindings."
+missing_auth = "Run `harn connect google_workspace` before enabling Google Workspace bindings."
 expired_credentials = "Refresh the OAuth access token and rerun Google Workspace validation."
-revoked_credentials = "Reauthorize Google Workspace and replace google-workspace/access-token."
-missing_scopes = "Grant Drive file and Docs scopes required by the configured artifact workflow."
+revoked_credentials = "Reauthorize Google Workspace and replace google_workspace/access-token."
+missing_scopes = "Grant Drive, Docs, and Gmail scopes required by the configured artifact workflow."
 inaccessible_resource = "Confirm the selected Drive file or folder is visible to the authorized account."
 transient_provider_outage = "Retry after Google Workspace APIs and push channels are healthy."
 
