@@ -15,10 +15,10 @@ pipeline default() {
   shutdown()
   init({access_token: "secret_access"})
   http_mock_clear()
-  let drive = "https://www.googleapis.com/drive/v3"
-  let upload = "https://www.googleapis.com/upload/drive/v3"
-  let docs = "https://docs.googleapis.com/v1"
-  let gmail = "https://gmail.googleapis.com/gmail/v1"
+  const drive = "https://www.googleapis.com/drive/v3"
+  const upload = "https://www.googleapis.com/upload/drive/v3"
+  const docs = "https://docs.googleapis.com/v1"
+  const gmail = "https://gmail.googleapis.com/gmail/v1"
   http_mock(
     "*",
     "https://www.googleapis.com/*",
@@ -67,10 +67,10 @@ pipeline default() {
       ],
     },
   )
-  let file = call("drive.files.get", {file_id: "file_123", fields: "id,name"})
+  const file = call("drive.files.get", {file_id: "file_123", fields: "id,name"})
   expect_eq(file.id, "file_123", "files.get response")
   call("drive.files.list", {q: "name='Report'", page_size: 10})
-  let create_rejected = call("drive.files.create", {name: "Report", mimeType: "application/vnd.google-apps.document"})
+  const create_rejected = call("drive.files.create", {name: "Report", mimeType: "application/vnd.google-apps.document"})
   expect(is_err(create_rejected), "mutating Drive create requires approval")
   expect_eq(unwrap_err(create_rejected).code, "approval_required", "approval code")
   call(
@@ -94,7 +94,7 @@ pipeline default() {
       _approved: true,
     },
   )
-  let created = call("docs.documents.create", {title: "Report", _approved: true})
+  const created = call("docs.documents.create", {title: "Report", _approved: true})
   expect_eq(created.documentId, "doc_123", "docs create response")
   call("docs.documents.get", {document_id: "doc_123"})
   call(
@@ -105,23 +105,23 @@ pipeline default() {
       _approved: true,
     },
   )
-  let gmail_messages = call("gmail.messages.list", {q: "receipt newer_than:30d", max_results: 5})
+  const gmail_messages = call("gmail.messages.list", {q: "receipt newer_than:30d", max_results: 5})
   expect_eq(gmail_messages.messages[0].id, "msg_123", "gmail messages.list response")
-  let gmail_message = call("gmail.messages.get", {message_id: "msg_123", format: "full"})
+  const gmail_message = call("gmail.messages.get", {message_id: "msg_123", format: "full"})
   expect_eq(gmail_message.id, "msg_123", "gmail messages.get response")
-  let attachment = call("gmail.messages.attachments.get", {message_id: "msg_123", attachment_id: "att_123"})
+  const attachment = call("gmail.messages.attachments.get", {message_id: "msg_123", attachment_id: "att_123"})
   expect_eq(attachment.data, "cmVjZWlwdA", "gmail attachment response")
-  let calls = http_mock_calls({include_sensitive: true})
+  const calls = http_mock_calls({include_sensitive: true})
   expect_eq(len(calls), 12, "all expected outbound methods dispatched")
   expect_eq(calls[0].method, "GET", "files.get uses GET")
   expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
   expect_eq(calls[0].headers.authorization, "Bearer secret_access", "authorization header sent")
   expect_eq(calls[2].url, upload + "/files?uploadType=multipart", "upload URL")
-  let create_body = json_parse(calls[2].body)
+  const create_body = json_parse(calls[2].body)
   expect_eq(create_body.name, "Report", "create body name")
   expect(create_body.access_token == nil, "access token not sent in body")
   expect_eq(calls[4].url, drive + "/changes?pageSize=5&pageToken=start_123", "changes list URL")
-  let docs_create_body = json_parse(calls[6].body)
+  const docs_create_body = json_parse(calls[6].body)
   expect_eq(docs_create_body.title, "Report", "docs create title")
   expect_eq(calls[8].url, docs + "/documents/doc_123:batchUpdate", "docs batchUpdate URL")
   expect_eq(
@@ -136,11 +136,11 @@ pipeline default() {
     gmail + "/users/me/messages/msg_123/attachments/att_123",
     "gmail attachment URL",
   )
-  let export = artifact_export_request({file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"})
+  const export = artifact_export_request({file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"})
   expect_eq(export.kind, "artifact_export", "export descriptor kind")
   expect_eq(export.method, "GET", "export descriptor method")
   expect_eq(export.artifact.mime_type, "application/pdf", "export artifact mime")
-  let import_request = artifact_import_request(
+  const import_request = artifact_import_request(
     {
       name: "report.docx",
       uri: "artifact://session/report.docx",
@@ -156,7 +156,7 @@ pipeline default() {
     "import target mime",
   )
   expect_eq(import_request.media.uri, "artifact://session/report.docx", "import media uri")
-  let descriptor = request_descriptor(
+  const descriptor = request_descriptor(
     "drive.files.export",
     {access_token: "secret_access", file_id: "file_123", mime_type: "application/pdf"},
   )
@@ -166,7 +166,7 @@ pipeline default() {
     drive + "/files/file_123/export?mimeType=application%2Fpdf",
     "export request URL",
   )
-  let bad_host = call(
+  const bad_host = call(
     "drive.files.get",
     {
       file_id: "file_123",
