@@ -1,20 +1,20 @@
-let GOOGLE_WORKSPACE_PROVIDER_ID = "google_workspace"
+const GOOGLE_WORKSPACE_PROVIDER_ID = "google_workspace"
 
-let GOOGLE_DRIVE_API_BASE_URL = "https://www.googleapis.com/drive/v3"
+const GOOGLE_DRIVE_API_BASE_URL = "https://www.googleapis.com/drive/v3"
 
-let GOOGLE_DRIVE_UPLOAD_BASE_URL = "https://www.googleapis.com/upload/drive/v3"
+const GOOGLE_DRIVE_UPLOAD_BASE_URL = "https://www.googleapis.com/upload/drive/v3"
 
-let GOOGLE_DOCS_API_BASE_URL = "https://docs.googleapis.com/v1"
+const GOOGLE_DOCS_API_BASE_URL = "https://docs.googleapis.com/v1"
 
-let GOOGLE_GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1"
+const GOOGLE_GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1"
 
-let GOOGLE_ALLOWED_API_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"]
+const GOOGLE_ALLOWED_API_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"]
 
-let GOOGLE_PUSH_HEADER_PREFIX = "x-goog-"
+const GOOGLE_PUSH_HEADER_PREFIX = "x-goog-"
 
-let GOOGLE_CHANNEL_TOKEN_MAX_LEN = 512
+const GOOGLE_CHANNEL_TOKEN_MAX_LEN = 512
 
-let GOOGLE_OUTBOUND_METHODS = [
+const GOOGLE_OUTBOUND_METHODS = [
   "drive.files.get",
   "drive.files.list",
   "drive.files.export",
@@ -33,7 +33,7 @@ let GOOGLE_OUTBOUND_METHODS = [
   "artifact.import_request",
 ]
 
-let GOOGLE_MUTATING_METHODS = [
+const GOOGLE_MUTATING_METHODS = [
   "drive.files.create",
   "drive.files.update",
   "drive.changes.watch",
@@ -42,7 +42,7 @@ let GOOGLE_MUTATING_METHODS = [
   "artifact.import_request",
 ]
 
-var GOOGLE_STATE = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
+let GOOGLE_STATE = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
 
 /** Return this connector's Harn provider id. */
 pub fn provider_id() {
@@ -56,7 +56,7 @@ pub fn kinds() {
 
 /** Describe outbound methods and which ones mutate provider state. */
 pub fn methods() {
-  var out = []
+  let out = []
   for name in GOOGLE_OUTBOUND_METHODS {
     out = out + [{name: name, requires_approval: contains(GOOGLE_MUTATING_METHODS, name)}]
   }
@@ -102,17 +102,17 @@ pub fn init(ctx = nil) {
 
 /** Activate webhook and poll bindings. */
 pub fn activate(bindings = []) {
-  var webhook_bindings = {}
-  var poll_bindings = {}
-  var seen_paths = {}
+  let webhook_bindings = {}
+  let poll_bindings = {}
+  let seen_paths = {}
   for binding in bindings ?? [] {
-    let binding_id = __text(
+    const binding_id = __text(
       binding?.binding_id ?? binding?.id
         ?? ("binding-" + to_string(len(webhook_bindings.keys()) + len(poll_bindings.keys()))),
     )
-    let kind = __text(binding?.kind ?? "webhook")
+    const kind = __text(binding?.kind ?? "webhook")
     if kind == "webhook" {
-      let path = __text(binding?.path ?? binding?.match?.path)
+      const path = __text(binding?.path ?? binding?.match?.path)
       if path != "" {
         if seen_paths.get(path) {
           return __err(
@@ -155,17 +155,17 @@ pub fn shutdown() {
  * changes.
  */
 pub fn normalize_inbound(raw) {
-  let headers = raw?.headers ?? {}
-  let channel_id = __header(headers, "x-goog-channel-id")
-  let resource_id = __header(headers, "x-goog-resource-id")
+  const headers = raw?.headers ?? {}
+  const channel_id = __header(headers, "x-goog-channel-id")
+  const resource_id = __header(headers, "x-goog-resource-id")
   if channel_id == nil || channel_id == "" || resource_id == nil || resource_id == "" {
     return __reject(400, "missing_google_headers", "missing x-goog-channel-id or x-goog-resource-id")
   }
-  let expected_token = __text(
+  const expected_token = __text(
     raw?.channel_token ?? raw?.verification_token ?? raw?.metadata?.channel_token
       ?? GOOGLE_STATE.ctx?.channel_token,
   )
-  let provided_token = __text(__header(headers, "x-goog-channel-token"))
+  const provided_token = __text(__header(headers, "x-goog-channel-token"))
   if expected_token != "" {
     if len(expected_token) > GOOGLE_CHANNEL_TOKEN_MAX_LEN {
       return __reject(400, "channel_token_too_long", "google workspace channel token exceeds maximum length")
@@ -174,13 +174,13 @@ pub fn normalize_inbound(raw) {
       return __reject(401, "invalid_channel_token", "x-goog-channel-token did not match")
     }
   }
-  let resource_state = __text(__header(headers, "x-goog-resource-state"))
-  let event = if resource_state == "" {
+  const resource_state = __text(__header(headers, "x-goog-resource-state"))
+  const event = if resource_state == "" {
     "google_workspace.drive.change"
   } else {
     "google_workspace.drive." + resource_state
   }
-  let payload = {
+  const payload = {
     provider: GOOGLE_WORKSPACE_PROVIDER_ID,
     event: event,
     event_type: event,
@@ -215,7 +215,7 @@ pub fn normalize_inbound(raw) {
 
 /** Dispatch one Google Workspace outbound method. */
 pub fn call(method, args = nil) {
-  let name = __canonical_method(method)
+  const name = __canonical_method(method)
   if name == "artifact.export_request" {
     return artifact_export_request(args ?? {})
   }
@@ -225,11 +225,11 @@ pub fn call(method, args = nil) {
   if contains(GOOGLE_MUTATING_METHODS, name) && !(args?._approved ?? args?.approved ?? false) {
     return __err("approval_required", "google workspace method `" + name + "` requires approval")
   }
-  let cfg = __config(args ?? {})
+  const cfg = __config(args ?? {})
   if is_err(cfg) {
     return cfg
   }
-  let request = __request_for_method(name, args ?? {}, unwrap(cfg))
+  const request = __request_for_method(name, args ?? {}, unwrap(cfg))
   if is_err(request) {
     return request
   }
@@ -238,7 +238,7 @@ pub fn call(method, args = nil) {
 
 /** Build the deterministic HTTP descriptor for a Google Workspace method. */
 pub fn request_descriptor(method, args = nil) {
-  let cfg = __config(args ?? {})
+  const cfg = __config(args ?? {})
   if is_err(cfg) {
     return cfg
   }
@@ -247,17 +247,17 @@ pub fn request_descriptor(method, args = nil) {
 
 /** Poll Drive changes and normalize changed file events from a Harn-managed cursor. */
 pub fn poll_tick(ctx) {
-  let cfg = __config((ctx?.binding?.config ?? {}) + (ctx?.binding ?? {}) + (ctx ?? {}))
+  const cfg = __config((ctx?.binding?.config ?? {}) + (ctx?.binding ?? {}) + (ctx ?? {}))
   if is_err(cfg) {
     return cfg
   }
-  let binding = ctx?.binding ?? {}
-  let poll = binding?.poll ?? binding?.config?.poll ?? {}
-  let page_token = __text(ctx?.cursor?.page_token ?? poll?.page_token ?? poll?.start_page_token)
+  const binding = ctx?.binding ?? {}
+  const poll = binding?.poll ?? binding?.config?.poll ?? {}
+  const page_token = __text(ctx?.cursor?.page_token ?? poll?.page_token ?? poll?.start_page_token)
   if page_token == "" {
     return __err("missing_page_token", "google workspace poll requires a Drive changes page token")
   }
-  let request = __drive_changes_list_request(
+  const request = __drive_changes_list_request(
     {
       page_token: page_token,
       page_size: ctx?.max_batch_size ?? poll?.page_size,
@@ -266,29 +266,29 @@ pub fn poll_tick(ctx) {
     },
     unwrap(cfg),
   )
-  let response = __google_request(request)
+  const response = __google_request(request)
   if is_err(response) {
     return response
   }
-  let payload = unwrap(response)
-  var events = []
-  let state = ctx?.state ?? {}
-  let cache = state?.poll_cache ?? {}
-  var next_cache = cache
+  const payload = unwrap(response)
+  let events = []
+  const state = ctx?.state ?? {}
+  const cache = state?.poll_cache ?? {}
+  let next_cache = cache
   for change in payload?.changes ?? [] {
-    let file = change?.file ?? {}
-    let file_id = __text(change?.fileId ?? file?.id)
+    const file = change?.file ?? {}
+    const file_id = __text(change?.fileId ?? file?.id)
     if file_id == "" {
       continue
     }
-    let changed_at = __text(file?.modifiedTime ?? change?.time ?? ctx?.tick_at)
-    let fingerprint = json_stringify({removed: change?.removed ?? false, file: file, changed_at: changed_at})
-    let cache_key = __text(ctx?.binding_id ?? binding?.id ?? "google.poll") + ":" + file_id
+    const changed_at = __text(file?.modifiedTime ?? change?.time ?? ctx?.tick_at)
+    const fingerprint = json_stringify({removed: change?.removed ?? false, file: file, changed_at: changed_at})
+    const cache_key = __text(ctx?.binding_id ?? binding?.id ?? "google.poll") + ":" + file_id
     if cache.get(cache_key) == fingerprint {
       continue
     }
     next_cache[cache_key] = fingerprint
-    let event_kind = if change?.removed ?? false {
+    const event_kind = if change?.removed ?? false {
       "google_workspace.drive.file_removed"
     } else {
       "google_workspace.drive.file_changed"
@@ -328,12 +328,12 @@ pub fn poll_tick(ctx) {
 
 /** Build a deterministic Drive export descriptor for a Google Workspace artifact. */
 pub fn artifact_export_request(args = nil) {
-  let file_id = __required(args, "file_id")
+  const file_id = __required(args, "file_id")
   if is_err(file_id) {
     return file_id
   }
-  let mime_type = __text(args?.mime_type ?? args?.mimeType ?? "application/pdf")
-  let name = __text(args?.name ?? "google-drive-export")
+  const mime_type = __text(args?.mime_type ?? args?.mimeType ?? "application/pdf")
+  const name = __text(args?.name ?? "google-drive-export")
   return {
     provider: GOOGLE_WORKSPACE_PROVIDER_ID,
     kind: "artifact_export",
@@ -352,13 +352,13 @@ pub fn artifact_export_request(args = nil) {
 
 /** Build a deterministic Drive import/upload descriptor for a local artifact. */
 pub fn artifact_import_request(args = nil) {
-  let name = __required(args, "name")
+  const name = __required(args, "name")
   if is_err(name) {
     return name
   }
-  let mime_type = __text(args?.mime_type ?? args?.mimeType ?? "application/octet-stream")
-  let target_mime = __text(args?.target_mime_type ?? args?.targetMimeType ?? mime_type)
-  var metadata = {name: unwrap(name)}
+  const mime_type = __text(args?.mime_type ?? args?.mimeType ?? "application/octet-stream")
+  const target_mime = __text(args?.target_mime_type ?? args?.targetMimeType ?? mime_type)
+  let metadata = {name: unwrap(name)}
   if args?.parents != nil {
     metadata.parents = args.parents
   }
@@ -400,7 +400,7 @@ fn __request_for_method(method, args, cfg) {
 
 fn __drive_request_for_method(method, args, cfg) {
   if method == "drive.files.get" {
-    let file_id = __required(args, "file_id")
+    const file_id = __required(args, "file_id")
     if is_err(file_id) {
       return file_id
     }
@@ -418,11 +418,11 @@ fn __drive_request_for_method(method, args, cfg) {
     return Ok(__json_request("GET", cfg.drive_api_base_url + "/files", nil, cfg, args))
   }
   if method == "drive.files.export" {
-    let file_id = __required(args, "file_id")
+    const file_id = __required(args, "file_id")
     if is_err(file_id) {
       return file_id
     }
-    let query = {mimeType: __text(args?.mime_type ?? args?.mimeType ?? "application/pdf")}
+    const query = {mimeType: __text(args?.mime_type ?? args?.mimeType ?? "application/pdf")}
     return Ok(
       __json_request(
         "GET",
@@ -434,13 +434,13 @@ fn __drive_request_for_method(method, args, cfg) {
     )
   }
   if method == "drive.files.create" {
-    let upload_type = __text(args?.upload_type ?? args?.uploadType)
-    let base = if upload_type == "" {
+    const upload_type = __text(args?.upload_type ?? args?.uploadType)
+    const base = if upload_type == "" {
       cfg.drive_api_base_url
     } else {
       cfg.drive_upload_base_url
     }
-    let body = __clean_body(
+    const body = __clean_body(
       args,
       [
         "access_token",
@@ -457,17 +457,17 @@ fn __drive_request_for_method(method, args, cfg) {
     return Ok(__json_request("POST", base + "/files", body, cfg, {uploadType: upload_type}))
   }
   if method == "drive.files.update" {
-    let file_id = __required(args, "file_id")
+    const file_id = __required(args, "file_id")
     if is_err(file_id) {
       return file_id
     }
-    let upload_type = __text(args?.upload_type ?? args?.uploadType)
-    let base = if upload_type == "" {
+    const upload_type = __text(args?.upload_type ?? args?.uploadType)
+    const base = if upload_type == "" {
       cfg.drive_api_base_url
     } else {
       cfg.drive_upload_base_url
     }
-    let body = __clean_body(
+    const body = __clean_body(
       args,
       [
         "file_id",
@@ -499,7 +499,7 @@ fn __drive_request_for_method(method, args, cfg) {
     return Ok(__drive_changes_list_request(args, cfg))
   }
   if method == "drive.changes.watch" {
-    let body = __clean_body(
+    const body = __clean_body(
       args,
       [
         "access_token",
@@ -534,7 +534,7 @@ fn __docs_request_for_method(method, args, cfg) {
     )
   }
   if method == "docs.documents.get" {
-    let document_id = __required(args, "document_id")
+    const document_id = __required(args, "document_id")
     if is_err(document_id) {
       return document_id
     }
@@ -549,11 +549,11 @@ fn __docs_request_for_method(method, args, cfg) {
     )
   }
   if method == "docs.documents.batchUpdate" {
-    let document_id = __required(args, "document_id")
+    const document_id = __required(args, "document_id")
     if is_err(document_id) {
       return document_id
     }
-    var body = {requests: args?.requests ?? []}
+    let body = {requests: args?.requests ?? []}
     if args?.write_control != nil {
       body.writeControl = args.write_control
     }
@@ -586,7 +586,7 @@ fn __gmail_request_for_method(method, args, cfg) {
     )
   }
   if method == "gmail.messages.get" {
-    let message_id = __required(args, "message_id")
+    const message_id = __required(args, "message_id")
     if is_err(message_id) {
       return message_id
     }
@@ -602,11 +602,11 @@ fn __gmail_request_for_method(method, args, cfg) {
     )
   }
   if method == "gmail.messages.attachments.get" {
-    let message_id = __required(args, "message_id")
+    const message_id = __required(args, "message_id")
     if is_err(message_id) {
       return message_id
     }
-    let attachment_id = __required(args, "attachment_id")
+    const attachment_id = __required(args, "attachment_id")
     if is_err(attachment_id) {
       return attachment_id
     }
@@ -633,7 +633,7 @@ fn __gmail_request_for_method(method, args, cfg) {
 }
 
 fn __drive_changes_list_request(args, cfg) {
-  let page_token = __required(args, "page_token")
+  const page_token = __required(args, "page_token")
   if is_err(page_token) {
     return page_token
   }
@@ -647,7 +647,7 @@ fn __drive_changes_list_request(args, cfg) {
 }
 
 fn __json_request(method, url, body, cfg, args) {
-  let checked_url = __with_query(url, __query_params(args ?? {}))
+  const checked_url = __with_query(url, __query_params(args ?? {}))
   return {
     method: method,
     url: checked_url,
@@ -661,19 +661,19 @@ fn __json_request(method, url, body, cfg, args) {
 }
 
 fn __google_request(request) {
-  var options = {headers: request.headers}
+  let options = {headers: request.headers}
   if request.body != nil {
     options.body = request.body
   }
-  let response = try {
+  const response = try {
     harness.net.request(request.method, request.url, options)
   }
   if is_err(response) {
     return __err("transport", to_string(unwrap_err(response)))
   }
-  let http_response = unwrap(response)
-  let text = __text(http_response.body ?? "{}")
-  let decoded = try {
+  const http_response = unwrap(response)
+  const text = __text(http_response.body ?? "{}")
+  const decoded = try {
     if text == "" {
       {}
     } else {
@@ -694,7 +694,7 @@ fn __google_request(request) {
       },
     )
   }
-  let payload = unwrap(decoded)
+  const payload = unwrap(decoded)
   if http_response.status < 200 || http_response.status >= 300 {
     return Err(
       {
@@ -709,23 +709,23 @@ fn __google_request(request) {
 }
 
 fn __config(args) {
-  let access_token = __text(args?.access_token ?? args?.token ?? GOOGLE_STATE.ctx?.access_token)
+  const access_token = __text(args?.access_token ?? args?.token ?? GOOGLE_STATE.ctx?.access_token)
   if access_token == "" {
     return __err("missing_access_token", "google workspace connector requires access_token")
   }
-  let drive_api_base_url = __text(
+  const drive_api_base_url = __text(
     args?.drive_api_base_url ?? GOOGLE_STATE.ctx?.drive_api_base_url ?? GOOGLE_DRIVE_API_BASE_URL,
   )
-  let drive_upload_base_url = __text(
+  const drive_upload_base_url = __text(
     args?.drive_upload_base_url ?? GOOGLE_STATE.ctx?.drive_upload_base_url
       ?? GOOGLE_DRIVE_UPLOAD_BASE_URL,
   )
-  let docs_api_base_url = __text(args?.docs_api_base_url ?? GOOGLE_STATE.ctx?.docs_api_base_url ?? GOOGLE_DOCS_API_BASE_URL)
-  let gmail_api_base_url = __text(
+  const docs_api_base_url = __text(args?.docs_api_base_url ?? GOOGLE_STATE.ctx?.docs_api_base_url ?? GOOGLE_DOCS_API_BASE_URL)
+  const gmail_api_base_url = __text(
     args?.gmail_api_base_url ?? GOOGLE_STATE.ctx?.gmail_api_base_url ?? GOOGLE_GMAIL_API_BASE_URL,
   )
   for url in [drive_api_base_url, drive_upload_base_url, docs_api_base_url, gmail_api_base_url] {
-    let checked = __validate_api_url(url)
+    const checked = __validate_api_url(url)
     if is_err(checked) {
       return checked
     }
@@ -750,8 +750,8 @@ fn __google_headers(cfg) {
 }
 
 fn __query_params(args) {
-  var out = {}
-  let aliases = {
+  let out = {}
+  const aliases = {
     page_size: "pageSize",
     page_token: "pageToken",
     include_items_from_all_drives: "includeItemsFromAllDrives",
@@ -768,7 +768,7 @@ fn __query_params(args) {
     upload_type: "uploadType",
   }
   for key in aliases.keys() {
-    let value = args?.[key]
+    const value = args?.[key]
     if value != nil && __text(value) != "" {
       out[aliases[key]] = value
     }
@@ -777,9 +777,9 @@ fn __query_params(args) {
 }
 
 fn __with_query(url, query) {
-  var parts = []
+  let parts = []
   for key in query.keys().sort() {
-    let value = query[key]
+    const value = query[key]
     if value != nil && __text(value) != "" {
       parts = parts + [url_encode(key) + "=" + url_encode(to_string(value))]
     }
@@ -791,7 +791,7 @@ fn __with_query(url, query) {
 }
 
 fn __clean_body(args, deny) {
-  var body = {}
+  let body = {}
   for key in (args ?? {}).keys() {
     if contains(deny, key) || starts_with(key, "_") {
       continue
@@ -802,7 +802,7 @@ fn __clean_body(args, deny) {
 }
 
 fn __canonical_method(method) {
-  let text = __text(method)
+  const text = __text(method)
   if text == "export_artifact" {
     return "artifact.export_request"
   }
@@ -816,8 +816,8 @@ fn __canonical_method(method) {
 }
 
 fn __required(args, snake_key) {
-  let camel = __snake_to_camel(snake_key)
-  let value = __text(args?.[snake_key] ?? args?.[camel])
+  const camel = __snake_to_camel(snake_key)
+  const value = __text(args?.[snake_key] ?? args?.[camel])
   if value == "" {
     return __err("missing_" + snake_key, "google workspace method requires `" + snake_key + "`")
   }
@@ -848,12 +848,12 @@ fn __gmail_user(args) {
 }
 
 fn __validate_api_url(url) {
-  let text = __text(url)
+  const text = __text(url)
   if !starts_with(lowercase(text), "https://") {
     return __err("invalid_api_base_url", "google workspace api base url must be an absolute https URL")
   }
-  let parsed = url_parse(text)
-  let host = lowercase(__text(parsed?.host))
+  const parsed = url_parse(text)
+  const host = lowercase(__text(parsed?.host))
   if !contains(GOOGLE_ALLOWED_API_HOSTS, host) {
     return __err("disallowed_api_base_url", "google workspace api host `" + host + "` is not in the allowlist")
   }
@@ -861,7 +861,7 @@ fn __validate_api_url(url) {
 }
 
 fn __strip_trailing_slash(value) {
-  let text = __text(value)
+  const text = __text(value)
   if text.ends_with("/") {
     return text[0:len(text) - 1]
   }
@@ -869,7 +869,7 @@ fn __strip_trailing_slash(value) {
 }
 
 fn __header(headers, name) {
-  let wanted = lowercase(name)
+  const wanted = lowercase(name)
   for entry in (headers ?? {}).entries() {
     if lowercase(trim(to_string(entry.key))) == wanted {
       return entry.value
@@ -879,9 +879,9 @@ fn __header(headers, name) {
 }
 
 fn __google_push_headers(headers) {
-  var out = {}
+  let out = {}
   for entry in (headers ?? {}).entries() {
-    let key = lowercase(trim(to_string(entry.key)))
+    const key = lowercase(trim(to_string(entry.key)))
     if starts_with(key, GOOGLE_PUSH_HEADER_PREFIX) {
       out[key] = entry.value
     }

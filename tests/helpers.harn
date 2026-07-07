@@ -6,9 +6,9 @@ pub fn assert_google_workspace_interface() {
   require provider_id() == "google_workspace", "provider id"
   require kinds() == ["webhook", "poll"], "supported kinds"
   require payload_schema().harn_schema_name == "GoogleWorkspaceEventPayload", "payload schema name"
-  let initialized = init({channel_token: "test-token", access_token: "secret_access"})
+  const initialized = init({channel_token: "test-token", access_token: "secret_access"})
   require initialized.initialized, "init stores state"
-  let activated = activate(
+  const activated = activate(
     [
       {
         id: "google.drive.watch",

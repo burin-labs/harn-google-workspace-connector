@@ -44,7 +44,7 @@ pipeline default() {
   shutdown()
   init({access_token: "secret_access"})
   http_mock_clear()
-  let base = "https://www.googleapis.com/drive/v3"
+  const base = "https://www.googleapis.com/drive/v3"
   http_mock(
     "GET",
     base + "/changes*",
@@ -73,7 +73,7 @@ pipeline default() {
       ],
     },
   )
-  let first = poll_tick(poll_ctx({page_token: "start_123"}))
+  const first = poll_tick(poll_ctx({page_token: "start_123"}))
   expect_eq(len(first.events), 1, "first tick emits one normalized event")
   expect_eq(first.events[0].kind, "google_workspace.drive.file_changed", "poll event kind")
   expect_eq(first.events[0].payload.file_id, "file_1", "poll file id")
@@ -87,18 +87,18 @@ pipeline default() {
     first.state.poll_cache.get("google.drive.poll:file_1") != nil,
     "first tick persists snapshot",
   )
-  let second = poll_tick(poll_ctx(first.cursor, first.state))
+  const second = poll_tick(poll_ctx(first.cursor, first.state))
   expect_eq(len(second.events), 1, "second tick emits one changed file")
   expect_eq(second.events[0].payload.file_id, "file_2", "second file id")
   expect_eq(second.cursor.page_token, "next_2", "second tick advances cursor")
-  let failed = poll_tick(poll_ctx(second.cursor, second.state))
+  const failed = poll_tick(poll_ctx(second.cursor, second.state))
   expect(is_err(failed), "retryable Google failures return Err without advancing local state")
   expect_eq(unwrap_err(failed).code, "UNAVAILABLE", "retry error preserves Google status")
-  let retried = poll_tick(poll_ctx(second.cursor, second.state))
+  const retried = poll_tick(poll_ctx(second.cursor, second.state))
   expect_eq(len(retried.events), 1, "retry with same cursor can emit after transient failure")
   expect_eq(retried.events[0].kind, "google_workspace.drive.file_removed", "removed kind")
   expect_eq(retried.events[0].payload.removed, true, "removed payload")
-  let calls = http_mock_calls({include_sensitive: true})
+  const calls = http_mock_calls({include_sensitive: true})
   expect_eq(len(calls), 4, "one Drive changes request per tick")
   expect_eq(
     calls[0].url,
@@ -128,7 +128,7 @@ pipeline default() {
       headers: {},
     },
   )
-  let duplicate = poll_tick(poll_ctx({page_token: "start_123"}, first.state))
+  const duplicate = poll_tick(poll_ctx({page_token: "start_123"}, first.state))
   expect_eq(len(duplicate.events), 0, "persisted state dedupes identical file snapshot")
   shutdown()
 }
