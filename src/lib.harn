@@ -42,7 +42,15 @@ const GOOGLE_MUTATING_METHODS = [
   "artifact.import_request",
 ]
 
-let GOOGLE_STATE = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
+type GoogleWorkspaceConnectorState = {
+  initialized: bool,
+  active: bool,
+  ctx: dict,
+  webhook_bindings: dict,
+  poll_bindings: dict,
+}
+
+let GOOGLE_STATE: GoogleWorkspaceConnectorState = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
 
 /** Return this connector's Harn provider id. */
 pub fn provider_id() {
@@ -96,7 +104,15 @@ pub fn payload_schema() {
 
 /** Initialize connector state with orchestrator context. */
 pub fn init(ctx = nil) {
-  GOOGLE_STATE = GOOGLE_STATE + {initialized: true, ctx: ctx ?? {}}
+  GOOGLE_STATE = GOOGLE_STATE
+    + {
+    initialized: true,
+    ctx: if type_of(ctx) == "dict" {
+      ctx
+    } else {
+      {}
+    },
+  }
   return GOOGLE_STATE
 }
 
