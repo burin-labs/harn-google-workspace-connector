@@ -13,7 +13,10 @@ pipeline default() {
     {allow: ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"], default: "deny"},
   )
   shutdown()
-  init({access_token: "secret_access"})
+  const normalized = init("invalid-context")
+  expect_eq(normalized.ctx, {}, "non-dict init context is normalized")
+  const initialized = init({access_token: "secret_access"})
+  expect_eq(initialized.ctx.access_token, "secret_access", "dict init context is retained")
   http_mock_clear()
   const drive = "https://www.googleapis.com/drive/v3"
   const upload = "https://www.googleapis.com/upload/drive/v3"
