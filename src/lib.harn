@@ -8,7 +8,11 @@ const GOOGLE_DOCS_API_BASE_URL = "https://docs.googleapis.com/v1"
 
 const GOOGLE_GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1"
 
-const GOOGLE_ALLOWED_API_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"]
+const GOOGLE_ALLOWED_API_HOSTS = [
+  "www.googleapis.com",
+  "docs.googleapis.com",
+  "gmail.googleapis.com",
+]
 
 const GOOGLE_PUSH_HEADER_PREFIX = "x-goog-"
 
@@ -50,7 +54,13 @@ type GoogleWorkspaceConnectorState = {
   poll_bindings: dict,
 }
 
-let GOOGLE_STATE: GoogleWorkspaceConnectorState = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
+let GOOGLE_STATE: GoogleWorkspaceConnectorState = {
+  initialized: false,
+  active: false,
+  ctx: {},
+  webhook_bindings: {},
+  poll_bindings: {},
+}
 
 /** Return this connector's Harn provider id. */
 pub fn provider_id() {
@@ -124,7 +134,10 @@ pub fn activate(bindings = []) {
   for binding in bindings ?? [] {
     const binding_id = __text(
       binding?.binding_id ?? binding?.id
-        ?? ("binding-" + to_string(len(webhook_bindings.keys()) + len(poll_bindings.keys()))),
+        ?? ("binding-"
+        + to_string(
+        len(webhook_bindings.keys()) + len(poll_bindings.keys()),
+      )),
     )
     const kind = __text(binding?.kind ?? "webhook")
     if kind == "webhook" {
@@ -146,7 +159,11 @@ pub fn activate(bindings = []) {
     }
   }
   GOOGLE_STATE = GOOGLE_STATE
-    + {active: true, webhook_bindings: webhook_bindings, poll_bindings: poll_bindings}
+    + {
+    active: true,
+    webhook_bindings: webhook_bindings,
+    poll_bindings: poll_bindings,
+  }
   return {
     provider: GOOGLE_WORKSPACE_PROVIDER_ID,
     bindings: len(webhook_bindings.keys()) + len(poll_bindings.keys()),
@@ -157,7 +174,13 @@ pub fn activate(bindings = []) {
 
 /** Clear connector lifecycle state. */
 pub fn shutdown() {
-  GOOGLE_STATE = {initialized: false, active: false, ctx: {}, webhook_bindings: {}, poll_bindings: {}}
+  GOOGLE_STATE = {
+    initialized: false,
+    active: false,
+    ctx: {},
+    webhook_bindings: {},
+    poll_bindings: {},
+  }
   return {active: false, provider: GOOGLE_WORKSPACE_PROVIDER_ID}
 }
 
@@ -175,16 +198,25 @@ pub fn normalize_inbound(raw) {
   const channel_id = __header(headers, "x-goog-channel-id")
   const resource_id = __header(headers, "x-goog-resource-id")
   if channel_id == nil || channel_id == "" || resource_id == nil || resource_id == "" {
-    return __reject(400, "missing_google_headers", "missing x-goog-channel-id or x-goog-resource-id")
+    return __reject(
+      400,
+      "missing_google_headers",
+      "missing x-goog-channel-id or x-goog-resource-id",
+    )
   }
   const expected_token = __text(
     raw?.channel_token ?? raw?.verification_token ?? raw?.metadata?.channel_token
-      ?? GOOGLE_STATE.ctx?.channel_token,
+      ?? GOOGLE_STATE.ctx
+      ?.channel_token,
   )
   const provided_token = __text(__header(headers, "x-goog-channel-token"))
   if expected_token != "" {
     if len(expected_token) > GOOGLE_CHANNEL_TOKEN_MAX_LEN {
-      return __reject(400, "channel_token_too_long", "google workspace channel token exceeds maximum length")
+      return __reject(
+        400,
+        "channel_token_too_long",
+        "google workspace channel token exceeds maximum length",
+      )
     }
     if !constant_time_eq(expected_token, provided_token) {
       return __reject(401, "invalid_channel_token", "x-goog-channel-token did not match")
@@ -298,7 +330,9 @@ pub fn poll_tick(ctx) {
       continue
     }
     const changed_at = __text(file?.modifiedTime ?? change?.time ?? ctx?.tick_at)
-    const fingerprint = json_stringify({removed: change?.removed ?? false, file: file, changed_at: changed_at})
+    const fingerprint = json_stringify(
+      {removed: change?.removed ?? false, file: file, changed_at: changed_at},
+    )
     const cache_key = __text(ctx?.binding_id ?? binding?.id ?? "google.poll") + ":" + file_id
     if cache.get(cache_key) == fingerprint {
       continue
@@ -362,7 +396,10 @@ pub fn artifact_export_request(args = nil) {
       mime_type: mime_type,
       source_ref: __drive_file_ref(unwrap(file_id), {}),
     },
-    scopes: ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file"],
+    scopes: [
+      "https://www.googleapis.com/auth/drive.readonly",
+      "https://www.googleapis.com/auth/drive.file",
+    ],
   }
 }
 
@@ -509,7 +546,9 @@ fn __drive_request_for_method(method, args, cfg) {
     )
   }
   if method == "drive.changes.getStartPageToken" {
-    return Ok(__json_request("GET", cfg.drive_api_base_url + "/changes/startPageToken", nil, cfg, args))
+    return Ok(
+      __json_request("GET", cfg.drive_api_base_url + "/changes/startPageToken", nil, cfg, args),
+    )
   }
   if method == "drive.changes.list" {
     return Ok(__drive_changes_list_request(args, cfg))
@@ -610,7 +649,9 @@ fn __gmail_request_for_method(method, args, cfg) {
       __json_request(
         "GET",
         cfg.gmail_api_base_url + "/users/" + __gmail_user(args) + "/messages/"
-          + url_encode(unwrap(message_id)),
+          + url_encode(
+          unwrap(message_id),
+        ),
         nil,
         cfg,
         args,
@@ -717,7 +758,10 @@ fn __google_request(request) {
         status: http_response.status,
         code: payload?.error?.status ?? payload?.error ?? "google_workspace_error",
         message: payload?.error?.message
-          ?? ("Google Workspace API request failed with status " + to_string(http_response.status)),
+          ?? ("Google Workspace API request failed with status "
+          + to_string(
+          http_response.status,
+        )),
       },
     )
   }
@@ -736,7 +780,9 @@ fn __config(args) {
     args?.drive_upload_base_url ?? GOOGLE_STATE.ctx?.drive_upload_base_url
       ?? GOOGLE_DRIVE_UPLOAD_BASE_URL,
   )
-  const docs_api_base_url = __text(args?.docs_api_base_url ?? GOOGLE_STATE.ctx?.docs_api_base_url ?? GOOGLE_DOCS_API_BASE_URL)
+  const docs_api_base_url = __text(
+    args?.docs_api_base_url ?? GOOGLE_STATE.ctx?.docs_api_base_url ?? GOOGLE_DOCS_API_BASE_URL,
+  )
   const gmail_api_base_url = __text(
     args?.gmail_api_base_url ?? GOOGLE_STATE.ctx?.gmail_api_base_url ?? GOOGLE_GMAIL_API_BASE_URL,
   )
@@ -866,12 +912,18 @@ fn __gmail_user(args) {
 fn __validate_api_url(url) {
   const text = __text(url)
   if !starts_with(lowercase(text), "https://") {
-    return __err("invalid_api_base_url", "google workspace api base url must be an absolute https URL")
+    return __err(
+      "invalid_api_base_url",
+      "google workspace api base url must be an absolute https URL",
+    )
   }
   const parsed = url_parse(text)
   const host = lowercase(__text(parsed?.host))
   if !contains(GOOGLE_ALLOWED_API_HOSTS, host) {
-    return __err("disallowed_api_base_url", "google workspace api host `" + host + "` is not in the allowlist")
+    return __err(
+      "disallowed_api_base_url",
+      "google workspace api host `" + host + "` is not in the allowlist",
+    )
   }
   return Ok(text)
 }
@@ -929,7 +981,9 @@ fn __drive_file_ref(file_id, file) {
 
 fn __event_dedupe_key(event, resource_id, channel_id, message_number) {
   return GOOGLE_WORKSPACE_PROVIDER_ID + ":" + __text(event) + ":" + __text(resource_id) + ":"
-    + __text(channel_id)
+    + __text(
+    channel_id,
+  )
     + ":"
     + __text(message_number)
 }

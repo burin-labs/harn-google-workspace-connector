@@ -16,14 +16,18 @@ pipeline default() {
   expect(event.event.dedupe_key.contains("resource_123"), "dedupe key includes resource id")
   expect_eq(event.event.source_refs[0].kind, "drive_resource", "source ref kind")
   shutdown()
-  const unsigned = normalize_inbound({headers: drive_push_headers("", {"x-goog-channel-token": ""})})
+  const unsigned = normalize_inbound(
+    {headers: drive_push_headers("", {"x-goog-channel-token": ""})},
+  )
   expect_eq(unsigned.type, "event", "unsigned push can be accepted when no token configured")
   expect_eq(unsigned.event.signature_status.state, "unsigned", "unsigned state")
   init({channel_token: token})
   const bad_token = normalize_inbound({channel_token: token, headers: drive_push_headers("wrong")})
   expect_eq(bad_token.type, "reject", "wrong channel token rejects")
   expect_eq(bad_token.reject.status, 401, "wrong channel token status")
-  const missing = normalize_inbound({channel_token: token, headers: {"x-goog-channel-id": "chan_123"}})
+  const missing = normalize_inbound(
+    {channel_token: token, headers: {"x-goog-channel-id": "chan_123"}},
+  )
   expect_eq(missing.type, "reject", "missing resource id rejects")
   expect_eq(missing.reject.status, 400, "missing header status")
   shutdown()

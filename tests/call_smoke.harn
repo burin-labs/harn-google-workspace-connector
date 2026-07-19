@@ -37,10 +37,15 @@ pipeline default() {
         {status: 200, body: "{\"startPageToken\":\"start_123\"}", headers: {}},
         {
           status: 200,
-          body: "{\"changes\":[{\"fileId\":\"file_123\",\"file\":{\"id\":\"file_123\",\"name\":\"Report\"}}],\"newStartPageToken\":\"next_123\"}",
+          body:
+            "{\"changes\":[{\"fileId\":\"file_123\",\"file\":{\"id\":\"file_123\",\"name\":\"Report\"}}],\"newStartPageToken\":\"next_123\"}",
           headers: {},
         },
-        {status: 200, body: "{\"id\":\"channel_123\",\"resourceId\":\"resource_123\"}", headers: {}},
+        {
+          status: 200,
+          body: "{\"id\":\"channel_123\",\"resourceId\":\"resource_123\"}",
+          headers: {},
+        },
       ],
     },
   )
@@ -60,10 +65,15 @@ pipeline default() {
     "https://gmail.googleapis.com/*",
     {
       responses: [
-        {status: 200, body: "{\"messages\":[{\"id\":\"msg_123\",\"threadId\":\"thread_1\"}]}", headers: {}},
         {
           status: 200,
-          body: "{\"id\":\"msg_123\",\"threadId\":\"thread_1\",\"payload\":{\"headers\":[{\"name\":\"Subject\",\"value\":\"Your receipt\"}],\"parts\":[{\"filename\":\"receipt.pdf\",\"body\":{\"attachmentId\":\"att_123\",\"size\":12}}]}}",
+          body: "{\"messages\":[{\"id\":\"msg_123\",\"threadId\":\"thread_1\"}]}",
+          headers: {},
+        },
+        {
+          status: 200,
+          body:
+            "{\"id\":\"msg_123\",\"threadId\":\"thread_1\",\"payload\":{\"headers\":[{\"name\":\"Subject\",\"value\":\"Your receipt\"}],\"parts\":[{\"filename\":\"receipt.pdf\",\"body\":{\"attachmentId\":\"att_123\",\"size\":12}}]}}",
           headers: {},
         },
         {status: 200, body: "{\"data\":\"cmVjZWlwdA\",\"size\":7}", headers: {}},
@@ -73,7 +83,10 @@ pipeline default() {
   const file = call("drive.files.get", {file_id: "file_123", fields: "id,name"})
   expect_eq(file.id, "file_123", "files.get response")
   call("drive.files.list", {q: "name='Report'", page_size: 10})
-  const create_rejected = call("drive.files.create", {name: "Report", mimeType: "application/vnd.google-apps.document"})
+  const create_rejected = call(
+    "drive.files.create",
+    {name: "Report", mimeType: "application/vnd.google-apps.document"},
+  )
   expect(is_err(create_rejected), "mutating Drive create requires approval")
   expect_eq(unwrap_err(create_rejected).code, "approval_required", "approval code")
   call(
@@ -112,7 +125,10 @@ pipeline default() {
   expect_eq(gmail_messages.messages[0].id, "msg_123", "gmail messages.list response")
   const gmail_message = call("gmail.messages.get", {message_id: "msg_123", format: "full"})
   expect_eq(gmail_message.id, "msg_123", "gmail messages.get response")
-  const attachment = call("gmail.messages.attachments.get", {message_id: "msg_123", attachment_id: "att_123"})
+  const attachment = call(
+    "gmail.messages.attachments.get",
+    {message_id: "msg_123", attachment_id: "att_123"},
+  )
   expect_eq(attachment.data, "cmVjZWlwdA", "gmail attachment response")
   const calls = http_mock_calls({include_sensitive: true})
   expect_eq(len(calls), 12, "all expected outbound methods dispatched")
@@ -139,7 +155,9 @@ pipeline default() {
     gmail + "/users/me/messages/msg_123/attachments/att_123",
     "gmail attachment URL",
   )
-  const export = artifact_export_request({file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"})
+  const export = artifact_export_request(
+    {file_id: "file_123", mime_type: "application/pdf", name: "report.pdf"},
+  )
   expect_eq(export.kind, "artifact_export", "export descriptor kind")
   expect_eq(export.method, "GET", "export descriptor method")
   expect_eq(export.artifact.mime_type, "application/pdf", "export artifact mime")
