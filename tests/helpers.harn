@@ -1,14 +1,15 @@
 import { activate, init, kinds, payload_schema, provider_id, shutdown } from "../src/lib"
 
 /** Assert the exported connector lifecycle/interface surface. */
-pub fn assert_google_workspace_interface() {
-  shutdown()
+pub fn assert_google_workspace_interface(harness: Harness) {
+  shutdown(harness)
   require provider_id() == "google_workspace", "provider id"
   require kinds() == ["webhook", "poll"], "supported kinds"
   require payload_schema().harn_schema_name == "GoogleWorkspaceEventPayload", "payload schema name"
-  const initialized = init({channel_token: "test-token", access_token: "secret_access"})
+  const initialized = init(harness, {channel_token: "test-token", access_token: "secret_access"})
   require initialized.initialized, "init stores state"
   const activated = activate(
+    harness,
     [
       {
         id: "google.drive.watch",

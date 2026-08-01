@@ -8,21 +8,21 @@ import {
 } from "../src/lib"
 import { expect, expect_eq } from "./assertions"
 
-pipeline default() {
-  egress_policy(
+pipeline default(harness: Harness) {
+  harness.net.egress_policy(
     {allow: ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"], default: "deny"},
   )
-  shutdown()
-  const normalized = init("invalid-context")
+  shutdown(harness)
+  const normalized = init(harness, "invalid-context")
   expect_eq(normalized.ctx, {}, "non-dict init context is normalized")
-  const initialized = init({access_token: "secret_access"})
+  const initialized = init(harness, {access_token: "secret_access"})
   expect_eq(initialized.ctx.access_token, "secret_access", "dict init context is retained")
-  http_mock_clear()
+  harness.testing.http_mock_clear()
   const drive = "https://www.googleapis.com/drive/v3"
   const upload = "https://www.googleapis.com/upload/drive/v3"
   const docs = "https://docs.googleapis.com/v1"
   const gmail = "https://gmail.googleapis.com/gmail/v1"
-  http_mock(
+  harness.testing.http_mock(
     "*",
     "https://www.googleapis.com/*",
     {
@@ -49,7 +49,7 @@ pipeline default() {
       ],
     },
   )
-  http_mock(
+  harness.testing.http_mock(
     "*",
     "https://docs.googleapis.com/*",
     {
@@ -60,7 +60,7 @@ pipeline default() {
       ],
     },
   )
-  http_mock(
+  harness.testing.http_mock(
     "*",
     "https://gmail.googleapis.com/*",
     {
@@ -80,16 +80,18 @@ pipeline default() {
       ],
     },
   )
-  const file = call("drive.files.get", {file_id: "file_123", fields: "id,name"})
+  const file = call(harness, "drive.files.get", {file_id: "file_123", fields: "id,name"})
   expect_eq(file.id, "file_123", "files.get response")
-  call("drive.files.list", {q: "name='Report'", page_size: 10})
+  call(harness, "drive.files.list", {q: "name='Report'", page_size: 10})
   const create_rejected = call(
+    harness,
     "drive.files.create",
     {name: "Report", mimeType: "application/vnd.google-apps.document"},
   )
   expect(is_err(create_rejected), "mutating Drive create requires approval")
   expect_eq(unwrap_err(create_rejected).code, "approval_required", "approval code")
   call(
+    harness,
     "drive.files.create",
     {
       name: "Report",
@@ -98,9 +100,10 @@ pipeline default() {
       _approved: true,
     },
   )
-  call("drive.changes.getStartPageToken", {})
-  call("drive.changes.list", {page_token: "start_123", page_size: 5})
+  call(harness, "drive.changes.getStartPageToken", {})
+  call(harness, "drive.changes.list", {page_token: "start_123", page_size: 5})
   call(
+    harness,
     "drive.changes.watch",
     {
       page_token: "start_123",
@@ -110,10 +113,11 @@ pipeline default() {
       _approved: true,
     },
   )
-  const created = call("docs.documents.create", {title: "Report", _approved: true})
+  const created = call(harness, "docs.documents.create", {title: "Report", _approved: true})
   expect_eq(created.documentId, "doc_123", "docs create response")
-  call("docs.documents.get", {document_id: "doc_123"})
+  call(harness, "docs.documents.get", {document_id: "doc_123"})
   call(
+    harness,
     "docs.documents.batchUpdate",
     {
       document_id: "doc_123",
@@ -121,16 +125,21 @@ pipeline default() {
       _approved: true,
     },
   )
-  const gmail_messages = call("gmail.messages.list", {q: "receipt newer_than:30d", max_results: 5})
+  const gmail_messages = call(
+    harness,
+    "gmail.messages.list",
+    {q: "receipt newer_than:30d", max_results: 5},
+  )
   expect_eq(gmail_messages.messages[0].id, "msg_123", "gmail messages.list response")
-  const gmail_message = call("gmail.messages.get", {message_id: "msg_123", format: "full"})
+  const gmail_message = call(harness, "gmail.messages.get", {message_id: "msg_123", format: "full"})
   expect_eq(gmail_message.id, "msg_123", "gmail messages.get response")
   const attachment = call(
+    harness,
     "gmail.messages.attachments.get",
     {message_id: "msg_123", attachment_id: "att_123"},
   )
   expect_eq(attachment.data, "cmVjZWlwdA", "gmail attachment response")
-  const calls = http_mock_calls({include_sensitive: true})
+  const calls = harness.testing.http_mock_calls({include_sensitive: true})
   expect_eq(len(calls), 12, "all expected outbound methods dispatched")
   expect_eq(calls[0].method, "GET", "files.get uses GET")
   expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
@@ -188,6 +197,7 @@ pipeline default() {
     "export request URL",
   )
   const bad_host = call(
+    harness,
     "drive.files.get",
     {
       file_id: "file_123",
@@ -197,6 +207,6 @@ pipeline default() {
   )
   expect(is_err(bad_host), "disallowed api_base_url rejected")
   expect_eq(unwrap_err(bad_host).code, "disallowed_api_base_url", "disallowed host code")
-  http_mock_clear()
-  shutdown()
+  harness.testing.http_mock_clear()
+  shutdown(harness)
 }

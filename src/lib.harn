@@ -113,7 +113,7 @@ pub fn payload_schema() {
 }
 
 /** Initialize connector state with orchestrator context. */
-pub fn init(ctx = nil) {
+pub fn init(harness: Harness, ctx = nil) {
   GOOGLE_STATE = GOOGLE_STATE
     + {
     initialized: true,
@@ -127,7 +127,7 @@ pub fn init(ctx = nil) {
 }
 
 /** Activate webhook and poll bindings. */
-pub fn activate(bindings = []) {
+pub fn activate(harness: Harness, bindings = []) {
   let webhook_bindings = {}
   let poll_bindings = {}
   let seen_paths = {}
@@ -173,7 +173,7 @@ pub fn activate(bindings = []) {
 }
 
 /** Clear connector lifecycle state. */
-pub fn shutdown() {
+pub fn shutdown(harness: Harness) {
   GOOGLE_STATE = {
     initialized: false,
     active: false,
@@ -193,7 +193,7 @@ pub fn shutdown() {
  * `drive.changes.list` from the stored page token to retrieve authoritative
  * changes.
  */
-pub fn normalize_inbound(raw) {
+pub fn normalize_inbound(harness: Harness, raw) {
   const headers = raw?.headers ?? {}
   const channel_id = __header(headers, "x-goog-channel-id")
   const resource_id = __header(headers, "x-goog-resource-id")
@@ -262,7 +262,7 @@ pub fn normalize_inbound(raw) {
 }
 
 /** Dispatch one Google Workspace outbound method. */
-pub fn call(method, args = nil) {
+pub fn call(harness: Harness, method, args = nil) {
   const name = __canonical_method(method)
   if name == "artifact.export_request" {
     return artifact_export_request(args ?? {})
@@ -281,7 +281,7 @@ pub fn call(method, args = nil) {
   if is_err(request) {
     return request
   }
-  return __google_request(unwrap(request))
+  return __google_request(harness, unwrap(request))
 }
 
 /** Build the deterministic HTTP descriptor for a Google Workspace method. */
@@ -294,7 +294,7 @@ pub fn request_descriptor(method, args = nil) {
 }
 
 /** Poll Drive changes and normalize changed file events from a Harn-managed cursor. */
-pub fn poll_tick(ctx) {
+pub fn poll_tick(harness: Harness, ctx) {
   const cfg = __config((ctx?.binding?.config ?? {}) + (ctx?.binding ?? {}) + (ctx ?? {}))
   if is_err(cfg) {
     return cfg
@@ -314,7 +314,7 @@ pub fn poll_tick(ctx) {
     },
     unwrap(cfg),
   )
-  const response = __google_request(request)
+  const response = __google_request(harness, request)
   if is_err(response) {
     return response
   }
@@ -717,7 +717,7 @@ fn __json_request(method, url, body, cfg, args) {
   }
 }
 
-fn __google_request(request) {
+fn __google_request(harness: Harness, request) {
   let options = {headers: request.headers}
   if request.body != nil {
     options.body = request.body
