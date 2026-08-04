@@ -717,13 +717,13 @@ fn __json_request(method, url, body, cfg, args) {
   }
 }
 
-fn __google_request(harness: HarnessNet, request) {
+fn __google_request(net: HarnessNet, request) {
   let options = {headers: request.headers}
   if request.body != nil {
     options.body = request.body
   }
   const response = try {
-    harness.request(request.method, request.url, options)
+    net.request(request.method, request.url, options)
   }
   if is_err(response) {
     return __err("transport", to_string(unwrap_err(response)))
