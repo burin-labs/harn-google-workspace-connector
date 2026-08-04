@@ -2,7 +2,7 @@ import { init, normalize_inbound, shutdown } from "../src/lib"
 import { expect, expect_eq } from "./assertions"
 import { assert_google_workspace_interface, drive_push_headers } from "./helpers"
 
-pipeline default(harness: Harness) {
+pipeline test_normalize_smoke(harness: Harness) {
   const token = "test-token"
   assert_google_workspace_interface(harness)
   const event = normalize_inbound(

@@ -8,7 +8,7 @@ import {
 } from "../src/lib"
 import { expect, expect_eq } from "./assertions"
 
-pipeline default(harness: Harness) {
+pipeline test_call_smoke(harness: Harness) {
   harness.net.egress_policy(
     {allow: ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"], default: "deny"},
   )
@@ -145,11 +145,11 @@ pipeline default(harness: Harness) {
   expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
   expect_eq(calls[0].headers.authorization, "Bearer secret_access", "authorization header sent")
   expect_eq(calls[2].url, upload + "/files?uploadType=multipart", "upload URL")
-  const create_body = json_parse(calls[2].body)
+  const create_body: {name: string, access_token?: string} = json_parse(calls[2].body)
   expect_eq(create_body.name, "Report", "create body name")
   expect(create_body.access_token == nil, "access token not sent in body")
   expect_eq(calls[4].url, drive + "/changes?pageSize=5&pageToken=start_123", "changes list URL")
-  const docs_create_body = json_parse(calls[6].body)
+  const docs_create_body: {title: string} = json_parse(calls[6].body)
   expect_eq(docs_create_body.title, "Report", "docs create title")
   expect_eq(calls[8].url, docs + "/documents/doc_123:batchUpdate", "docs batchUpdate URL")
   expect_eq(

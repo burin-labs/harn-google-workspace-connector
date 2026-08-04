@@ -39,7 +39,7 @@ fn file_change(id, modified, removed = false) {
   }
 }
 
-pipeline default(harness: Harness) {
+pipeline test_poll_smoke(harness: Harness) {
   harness.net.egress_policy({allow: ["www.googleapis.com"], default: "deny"})
   shutdown(harness)
   init(harness, {access_token: "secret_access"})
