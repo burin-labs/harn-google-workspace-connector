@@ -281,7 +281,7 @@ pub fn call(harness: Harness, method, args = nil) {
   if is_err(request) {
     return request
   }
-  return __google_request(harness, unwrap(request))
+  return __google_request(harness.net, unwrap(request))
 }
 
 /** Build the deterministic HTTP descriptor for a Google Workspace method. */
@@ -314,7 +314,7 @@ pub fn poll_tick(harness: Harness, ctx) {
     },
     unwrap(cfg),
   )
-  const response = __google_request(harness, request)
+  const response = __google_request(harness.net, request)
   if is_err(response) {
     return response
   }
@@ -717,13 +717,13 @@ fn __json_request(method, url, body, cfg, args) {
   }
 }
 
-fn __google_request(harness: Harness, request) {
+fn __google_request(harness: HarnessNet, request) {
   let options = {headers: request.headers}
   if request.body != nil {
     options.body = request.body
   }
   const response = try {
-    harness.net.request(request.method, request.url, options)
+    harness.request(request.method, request.url, options)
   }
   if is_err(response) {
     return __err("transport", to_string(unwrap_err(response)))
