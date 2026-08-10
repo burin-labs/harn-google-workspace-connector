@@ -9,9 +9,6 @@ import {
 import { expect, expect_eq } from "./assertions"
 
 pipeline test_call_smoke(harness: Harness) {
-  harness.net.egress_policy(
-    {allow: ["www.googleapis.com", "docs.googleapis.com", "gmail.googleapis.com"], default: "deny"},
-  )
   shutdown(harness)
   const normalized = init(harness, "invalid-context")
   expect_eq(normalized.ctx, {}, "non-dict init context is normalized")

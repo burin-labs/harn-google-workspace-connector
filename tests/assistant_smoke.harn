@@ -1,0 +1,249 @@
+import {
+  external_action_execute,
+  external_action_grant,
+  external_action_intent,
+  external_action_reconcile,
+} from "std/external_action"
+import {
+  call,
+  external_action_adapter,
+  init,
+  methods,
+  request_descriptor,
+  shutdown,
+} from "../src/lib"
+import { expect, expect_eq } from "./assertions"
+
+fn grant(intent) {
+  return external_action_grant(
+    intent,
+    {
+      authorized_by: {kind: "user", id: "user-1"},
+      authorization_method: "test_fixture",
+      authentication_assurance: "session",
+      issued_at_ms: 0,
+      expires_at_ms: 9999999999999,
+    },
+  )
+}
+
+pipeline test_assistant_smoke(harness: Harness) {
+  harness.runtime.checkpoint_clear()
+  harness.testing.http_mock_clear()
+  shutdown(harness)
+  init(harness, {access_token: "secret_access"})
+  const registry = methods()
+  const draft_write = registry.find(fn(item) { return item.name == "gmail.drafts.create" })
+  const send = registry.find(fn(item) { return item.name == "gmail.drafts.send" })
+  expect_eq(draft_write.capability, "gmail.drafts.write", "draft capability is narrow")
+  expect_eq(send.capability, "gmail.send", "send capability is separate")
+  const direct_write = call(
+    harness,
+    "calendar.events.create",
+    {
+      calendar_id: "primary",
+      event: {
+        summary: "Should not dispatch",
+        start: {dateTime: "2026-11-01T01:30:00-07:00", timeZone: "America/Los_Angeles"},
+        end: {dateTime: "2026-11-01T02:30:00-08:00", timeZone: "America/Los_Angeles"},
+      },
+    },
+  )
+  expect(is_err(direct_write), "direct Calendar write is rejected")
+  expect_eq(
+    unwrap_err(direct_write).code,
+    "external_action_required",
+    "direct write names external-action requirement",
+  )
+  const descriptor = request_descriptor(
+    "calendar.events.update",
+    {
+      calendar_id: "team@example.com",
+      event_id: "event_123",
+      etag: "etag-v2",
+      external_action_fingerprint: "sha256:fixture",
+      event: {
+        summary: "Planning",
+        attendees: [{email: "teammate@example.com"}],
+        start: {dateTime: "2026-11-01T01:30:00-07:00", timeZone: "America/Los_Angeles"},
+        end: {dateTime: "2026-11-01T02:30:00-08:00", timeZone: "America/Los_Angeles"},
+      },
+      send_updates: "all",
+    },
+  )
+  expect(is_ok(descriptor), "Calendar update descriptor builds")
+  const update = unwrap(descriptor)
+  const update_body: {
+    attendees: list<{email: string}>,
+    start: {dateTime: string},
+    extendedProperties: {private: {harnActionFingerprint: string}},
+  } = json_parse(update.body)
+  expect_eq(update.headers["If-Match"], "etag-v2", "stale updates use If-Match")
+  expect_eq(len(update_body.attendees), 1, "the validated event keeps one attendee")
+  expect_eq(update_body.attendees[0]?.email, "teammate@example.com", "attendees are preserved")
+  expect_eq(update_body.start.dateTime, "2026-11-01T01:30:00-07:00", "DST offset is preserved")
+  expect_eq(
+    update_body.extendedProperties.private.harnActionFingerprint,
+    "sha256:fixture",
+    "provider event carries the exact action marker",
+  )
+  const freebusy = request_descriptor(
+    "calendar.freebusy.query",
+    {
+      time_min: "2026-08-12T08:00:00-07:00",
+      time_max: "2026-08-12T18:00:00-07:00",
+      time_zone: "America/Los_Angeles",
+      items: [{id: "primary"}, {id: "teammate@example.com"}],
+    },
+  )
+  expect(is_ok(freebusy), "free/busy descriptor builds")
+  const freebusy_body: {timeZone: string} = json_parse(unwrap(freebusy).body)
+  expect_eq(freebusy_body.timeZone, "America/Los_Angeles", "timezone sent")
+  const drafts_page = request_descriptor(
+    "gmail.drafts.list",
+    {page_token: "next_page", max_results: 25},
+  )
+  expect(
+    unwrap(drafts_page).url.contains("pageToken=next_page"),
+    "draft pagination cursor is projected",
+  )
+  harness.testing.http_mock(
+    "GET",
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events*",
+    {
+      responses: [
+        {
+          status: 403,
+          body: "{\"error\":{\"status\":\"PERMISSION_DENIED\",\"message\":\"scope missing\"}}",
+          headers: {},
+        },
+      ],
+    },
+  )
+  const scope_denied = call(harness, "calendar.events.list", {calendar_id: "primary"})
+  expect(is_err(scope_denied), "OAuth scope denial remains typed")
+  expect_eq(unwrap_err(scope_denied).status, 403, "scope denial status")
+  expect_eq(unwrap_err(scope_denied).code, "PERMISSION_DENIED", "scope denial code")
+  harness.testing.http_mock_clear()
+  const calendar_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "calendar.events.write",
+      operation: "calendar.events.create",
+      environment: "test",
+      payload: {
+        calendar_id: "primary",
+        event: {
+          summary: "Planning",
+          start: {dateTime: "2026-08-12T09:00:00-07:00", timeZone: "America/Los_Angeles"},
+          end: {dateTime: "2026-08-12T09:30:00-07:00", timeZone: "America/Los_Angeles"},
+        },
+      },
+      display: {summary: "Create Planning event"},
+    },
+  )
+  harness.testing.http_mock(
+    "POST",
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events*",
+    {
+      responses: [
+        {
+          status: 200,
+          body: json_stringify(
+            {
+              id: "harncalendarfixture",
+              extendedProperties: {private: {harnActionFingerprint: calendar_intent.fingerprint}},
+            },
+          ),
+          headers: {},
+        },
+      ],
+    },
+  )
+  const adapter = external_action_adapter()
+  expect(!is_err(adapter), "configured external-action adapter builds")
+  const crossed_capability = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "gmail.drafts.write",
+      operation: "gmail.messages.send",
+      environment: "test",
+      payload: {
+        raw:
+          "RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NClN1YmplY3Q6IENyb3NzZWQNCk1lc3NhZ2UtSUQ6IDxoYXJuLWNyb3NzZWRAZXhhbXBsZS5jb20-DQoNCkhlbGxvDQo",
+        rfc822_message_id: "<harn-crossed@example.com>",
+      },
+      display: {summary: "Attempt send with draft-only capability"},
+    },
+  )
+  const crossed = external_action_execute(
+    harness,
+    crossed_capability,
+    grant(crossed_capability),
+    adapter,
+  )
+  expect_eq(crossed.status, "failed_before_dispatch", "draft grant cannot invoke send")
+  expect_eq(crossed.error?.code, "capability_mismatch", "capability crossing is typed")
+  const first = external_action_execute(harness, calendar_intent, grant(calendar_intent), adapter)
+  const replay = external_action_execute(harness, calendar_intent, grant(calendar_intent), adapter)
+  expect_eq(first.status, "confirmed", "Calendar create confirms")
+  expect_eq(replay.id, first.id, "duplicate delivery replays receipt")
+  expect_eq(
+    len(harness.testing.http_mock_calls({include_sensitive: false})),
+    1,
+    "duplicate delivery does not create a second event",
+  )
+  harness.testing.http_mock_clear()
+  harness.runtime.checkpoint_clear()
+  const send_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "gmail.send",
+      operation: "gmail.messages.send",
+      environment: "test",
+      payload: {
+        raw:
+          "RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NClN1YmplY3Q6IFN0YXR1cw0KTWVzc2FnZS1JRDogPGhhcm4tMTIzQGV4YW1wbGUuY29tPg0KDQpIZWxsbw0K",
+        rfc822_message_id: "<harn-123@example.com>",
+      },
+      display: {summary: "Send status email"},
+    },
+  )
+  harness.testing.http_mock(
+    "*",
+    "https://gmail.googleapis.com/*",
+    {
+      responses: [
+        {status: 503, body: "{\"error\":{\"status\":\"UNAVAILABLE\"}}", headers: {}},
+        {
+          status: 200,
+          body: "{\"messages\":[{\"id\":\"msg_sent_123\",\"threadId\":\"thread_1\"}]}",
+          headers: {},
+        },
+      ],
+    },
+  )
+  const uncertain = external_action_execute(harness, send_intent, grant(send_intent), adapter)
+  expect_eq(uncertain.status, "reconciliation_required", "send 503 is not treated as failure")
+  const reconciled = external_action_reconcile(
+    harness,
+    send_intent,
+    grant(send_intent),
+    uncertain,
+    adapter,
+    "gmail-poll-1",
+  )
+  expect_eq(reconciled.status, "confirmed", "sent Message-ID reconciles")
+  expect_eq(reconciled.provider_action_id, "msg_sent_123", "reconciliation records message id")
+  const gmail_calls = harness.testing.http_mock_calls({include_sensitive: false})
+  expect_eq(len(gmail_calls), 2, "send reconciliation uses one POST and one GET")
+  expect_eq(gmail_calls[0].method, "POST", "send dispatches once")
+  expect_eq(gmail_calls[1].method, "GET", "reconciliation is read-only")
+  expect(gmail_calls[1].url.contains("in%3Asent"), "reconciliation searches only sent mail")
+  harness.testing.http_mock_clear()
+  harness.runtime.checkpoint_clear()
+  shutdown(harness)
+}

@@ -1,0 +1,750 @@
+import {
+  ExternalActionAdapter,
+  ExternalActionAdapterResult,
+  ExternalActionDispatchRequest,
+  ExternalActionIntent,
+  ExternalActionReconcileRequest,
+} from "std/external_action/contracts"
+
+pub type GoogleAssistantEffect = "read" | "write"
+
+pub struct GoogleAssistantMethod {
+  name: string
+  capability: string
+  effect: GoogleAssistantEffect
+}
+
+pub struct GoogleAssistantError {
+  provider: string
+  code: string
+  message: string
+  status?: int
+}
+
+pub struct GoogleAssistantRequest {
+  method: string
+  url: string
+  headers: dict<string, string>
+  body?: string
+}
+
+const GOOGLE_ASSISTANT_METHODS = [
+  GoogleAssistantMethod {
+    name: "calendar.freebusy.query",
+    capability: "calendar.freebusy.read",
+    effect: "read",
+  },
+  GoogleAssistantMethod {
+    name: "calendar.events.list",
+    capability: "calendar.events.read",
+    effect: "read",
+  },
+  GoogleAssistantMethod {
+    name: "calendar.events.get",
+    capability: "calendar.events.read",
+    effect: "read",
+  },
+  GoogleAssistantMethod {
+    name: "calendar.events.create",
+    capability: "calendar.events.write",
+    effect: "write",
+  },
+  GoogleAssistantMethod {
+    name: "calendar.events.update",
+    capability: "calendar.events.write",
+    effect: "write",
+  },
+  GoogleAssistantMethod {
+    name: "calendar.events.delete",
+    capability: "calendar.events.write",
+    effect: "write",
+  },
+  GoogleAssistantMethod {
+    name: "gmail.drafts.list",
+    capability: "gmail.drafts.read",
+    effect: "read",
+  },
+  GoogleAssistantMethod {name: "gmail.drafts.get", capability: "gmail.drafts.read", effect: "read"},
+  GoogleAssistantMethod {
+    name: "gmail.drafts.create",
+    capability: "gmail.drafts.write",
+    effect: "write",
+  },
+  GoogleAssistantMethod {
+    name: "gmail.drafts.update",
+    capability: "gmail.drafts.write",
+    effect: "write",
+  },
+  GoogleAssistantMethod {name: "gmail.drafts.send", capability: "gmail.send", effect: "write"},
+  GoogleAssistantMethod {name: "gmail.messages.send", capability: "gmail.send", effect: "write"},
+]
+
+/** Return the narrow assistant capability owned by each Calendar/Gmail method. */
+pub fn google_assistant_methods() -> list<GoogleAssistantMethod> {
+  return GOOGLE_ASSISTANT_METHODS
+}
+
+/** Return true when the assistant surface owns a method. */
+pub fn google_assistant_has_method(method: string) -> bool {
+  return __assistant_method(method) != nil
+}
+
+/** Return true when a method must use the external-action lifecycle. */
+pub fn google_assistant_requires_external_action(method: string) -> bool {
+  return __assistant_method(method)?.effect == "write"
+}
+
+/** Build a Calendar/Gmail assistant request without performing it. */
+pub fn google_assistant_request_descriptor(
+  method: string,
+  args: dict,
+  cfg: dict,
+) -> Result<GoogleAssistantRequest, GoogleAssistantError> {
+  const canonical = trim(method)
+  if starts_with(canonical, "calendar.") {
+    return __calendar_request(canonical, args, cfg)
+  }
+  if starts_with(canonical, "gmail.drafts.") || canonical == "gmail.messages.send" {
+    return __gmail_assistant_request(canonical, args, cfg)
+  }
+  return Err(__assistant_error("method_not_found", "unsupported Google assistant method"))
+}
+
+/** Execute a read-only assistant request. Writes require an external action. */
+pub fn google_assistant_read(
+  net: HarnessNet,
+  method: string,
+  args: dict,
+  cfg: dict,
+) -> Result<unknown, GoogleAssistantError> {
+  if google_assistant_requires_external_action(method) {
+    return Err(
+      __assistant_error(
+        "external_action_required",
+        "Google Workspace writes require an exact external-action grant",
+      ),
+    )
+  }
+  const descriptor = google_assistant_request_descriptor(method, args, cfg)
+  if !is_ok(descriptor) {
+    return Err(unwrap_err(descriptor))
+  }
+  return __assistant_request(net, unwrap(descriptor))
+}
+
+/** Build the two-method Google Workspace external-action adapter. */
+pub fn google_workspace_external_action_adapter(cfg: dict) -> ExternalActionAdapter {
+  const dispatch =
+    fn(harness: Harness, request: ExternalActionDispatchRequest) { return __assistant_dispatch(
+    harness.net,
+    request,
+    cfg,
+  ) }
+  const reconcile =
+    fn(harness: Harness, request: ExternalActionReconcileRequest) { return __assistant_reconcile(
+    harness.net,
+    request,
+    cfg,
+  ) }
+  return {id: "google_workspace.v1", dispatch: dispatch, reconcile: reconcile}
+}
+
+fn __assistant_dispatch(
+  net: HarnessNet,
+  request: ExternalActionDispatchRequest,
+  cfg: dict,
+) -> ExternalActionAdapterResult {
+  const intent = request.intent
+  const method = __assistant_method(intent.operation)
+  if intent.provider != "google_workspace" || method == nil || method.effect != "write" {
+    return __failed("unsupported_external_action")
+  }
+  if intent.capability != method.capability {
+    return __failed("capability_mismatch")
+  }
+  const args_result = __action_args(intent)
+  if !is_ok(args_result) {
+    return __failed(unwrap_err(args_result).code)
+  }
+  const descriptor = google_assistant_request_descriptor(intent.operation, unwrap(args_result), cfg)
+  if !is_ok(descriptor) {
+    return __failed(unwrap_err(descriptor).code)
+  }
+  const response = __assistant_request(net, unwrap(descriptor))
+  if !is_ok(response) {
+    return __dispatch_error(unwrap_err(response))
+  }
+  return __confirmed(intent, unwrap(response), unwrap(args_result))
+}
+
+fn __assistant_reconcile(
+  net: HarnessNet,
+  request: ExternalActionReconcileRequest,
+  cfg: dict,
+) -> ExternalActionAdapterResult {
+  const intent = request.intent
+  const method = __assistant_method(intent.operation)
+  if intent.provider != "google_workspace" || method == nil || method.effect != "write" {
+    return __indeterminate("unsupported_reconciliation")
+  }
+  const args_result = __action_args(intent)
+  if !is_ok(args_result) {
+    return __indeterminate(unwrap_err(args_result).code)
+  }
+  const args = unwrap(args_result)
+  const descriptor = __reconciliation_request(intent, args, cfg)
+  if !is_ok(descriptor) {
+    return __indeterminate(unwrap_err(descriptor).code)
+  }
+  const response = __assistant_request(net, unwrap(descriptor))
+  if !is_ok(response) {
+    const error = unwrap_err(response)
+    if intent.operation == "calendar.events.delete" && error?.status == 404 {
+      return {
+        outcome: "confirmed",
+        provider_action_id: __calendar_event_id(intent, args),
+        evidence_refs: [__calendar_event_ref(args, __calendar_event_id(intent, args))],
+      }
+    }
+    return __indeterminate("reconcile_" + __error_code(error))
+  }
+  return __reconciled(intent, args, unwrap(response))
+}
+
+fn __action_args(intent: ExternalActionIntent) -> Result<dict, GoogleAssistantError> {
+  if type_of(intent.payload) != "dict" {
+    return Err(__assistant_error("invalid_action_payload", "action payload must be an object"))
+  }
+  return Ok(
+    intent.payload
+      + {
+      external_action_fingerprint: intent.fingerprint,
+      idempotency_key: intent.idempotency_key,
+    },
+  )
+}
+
+fn __calendar_request(
+  method: string,
+  args: dict,
+  cfg: dict,
+) -> Result<GoogleAssistantRequest, GoogleAssistantError> {
+  const base = cfg.calendar_api_base_url
+  if method == "calendar.freebusy.query" {
+    const body = {
+      timeMin: args?.time_min ?? args?.timeMin,
+      timeMax: args?.time_max ?? args?.timeMax,
+      timeZone: args?.time_zone ?? args?.timeZone,
+      items: args?.items ?? [],
+    }
+    if body.timeMin == nil || body.timeMax == nil || len(body.items) == 0 {
+      return Err(
+        __assistant_error("invalid_freebusy_query", "time range and calendars are required"),
+      )
+    }
+    return Ok(__descriptor("POST", base + "/freeBusy", body, cfg, {}))
+  }
+  const calendar_id = __required(args, "calendar_id", "primary")
+  const calendar_url = base + "/calendars/" + url_encode(calendar_id)
+  if method == "calendar.events.list" {
+    return Ok(__descriptor("GET", calendar_url + "/events", nil, cfg, __calendar_query(args)))
+  }
+  if method == "calendar.events.get" {
+    const event_id = __required(args, "event_id")
+    if event_id == "" {
+      return Err(__assistant_error("missing_event_id", "calendar event id is required"))
+    }
+    return Ok(
+      __descriptor(
+        "GET",
+        calendar_url + "/events/" + url_encode(event_id),
+        nil,
+        cfg,
+        __calendar_query(args),
+      ),
+    )
+  }
+  if method == "calendar.events.create" {
+    const event = __calendar_event_body(args)
+    if !is_ok(event) {
+      return Err(unwrap_err(event))
+    }
+    const event_id = __required(args, "event_id", __idempotent_calendar_id(args))
+    return Ok(
+      __descriptor(
+        "POST",
+        calendar_url + "/events",
+        unwrap(event) + {id: event_id},
+        cfg,
+        __calendar_query(args),
+      ),
+    )
+  }
+  const event_id = __required(args, "event_id")
+  if event_id == "" {
+    return Err(__assistant_error("missing_event_id", "calendar event id is required"))
+  }
+  if method == "calendar.events.update" {
+    const event = __calendar_event_body(args)
+    if !is_ok(event) {
+      return Err(unwrap_err(event))
+    }
+    return Ok(
+      __descriptor(
+        "PUT",
+        calendar_url + "/events/" + url_encode(event_id),
+        unwrap(event),
+        cfg,
+        __calendar_query(args),
+        __if_match(args),
+      ),
+    )
+  }
+  if method == "calendar.events.delete" {
+    return Ok(
+      __descriptor(
+        "DELETE",
+        calendar_url + "/events/" + url_encode(event_id),
+        nil,
+        cfg,
+        __calendar_query(args),
+        __if_match(args),
+      ),
+    )
+  }
+  return Err(__assistant_error("method_not_found", "unsupported Calendar method"))
+}
+
+fn __calendar_event_body(args: dict) -> Result<dict, GoogleAssistantError> {
+  if type_of(args?.event) != "dict" {
+    return Err(__assistant_error("missing_event", "calendar event body is required"))
+  }
+  const event = args.event
+  if type_of(event?.start) != "dict" || type_of(event?.end) != "dict" {
+    return Err(__assistant_error("invalid_event_time", "calendar event start and end are required"))
+  }
+  const fingerprint = trim(to_string(args?.external_action_fingerprint ?? ""))
+  if fingerprint == "" {
+    return Err(
+      __assistant_error(
+        "missing_external_action_fingerprint",
+        "calendar writes require an external-action fingerprint",
+      ),
+    )
+  }
+  const extended = event?.extendedProperties ?? {}
+  const private = extended?.private ?? {}
+  return Ok(
+    event
+      + {
+      extendedProperties: extended
+        + {private: private + {harnActionFingerprint: fingerprint}},
+    },
+  )
+}
+
+fn __gmail_assistant_request(
+  method: string,
+  args: dict,
+  cfg: dict,
+) -> Result<GoogleAssistantRequest, GoogleAssistantError> {
+  const user = url_encode(__required(args, "user_id", "me"))
+  const base = cfg.gmail_api_base_url + "/users/" + user
+  if method == "gmail.drafts.list" {
+    return Ok(__descriptor("GET", base + "/drafts", nil, cfg, __gmail_query(args)))
+  }
+  if method == "gmail.drafts.get" {
+    const draft_id = __required(args, "draft_id")
+    if draft_id == "" {
+      return Err(__assistant_error("missing_draft_id", "Gmail draft id is required"))
+    }
+    return Ok(
+      __descriptor("GET", base + "/drafts/" + url_encode(draft_id), nil, cfg, __gmail_query(args)),
+    )
+  }
+  if method == "gmail.drafts.create" || method == "gmail.drafts.update"
+    || method
+    == "gmail.messages.send" {
+    const message = __gmail_message(args)
+    if !is_ok(message) {
+      return Err(unwrap_err(message))
+    }
+    if method == "gmail.drafts.create" {
+      return Ok(__descriptor("POST", base + "/drafts", {message: unwrap(message)}, cfg, {}))
+    }
+    if method == "gmail.messages.send" {
+      return Ok(__descriptor("POST", base + "/messages/send", unwrap(message), cfg, {}))
+    }
+    const draft_id = __required(args, "draft_id")
+    if draft_id == "" {
+      return Err(__assistant_error("missing_draft_id", "Gmail draft id is required"))
+    }
+    return Ok(
+      __descriptor(
+        "PUT",
+        base + "/drafts/" + url_encode(draft_id),
+        {id: draft_id, message: unwrap(message)},
+        cfg,
+        {},
+      ),
+    )
+  }
+  if method == "gmail.drafts.send" {
+    const draft_id = __required(args, "draft_id")
+    const message_id = __required(args, "rfc822_message_id")
+    if draft_id == "" || message_id == "" {
+      return Err(
+        __assistant_error(
+          "missing_send_identity",
+          "draft id and RFC 822 Message-ID are required for safe send reconciliation",
+        ),
+      )
+    }
+    return Ok(__descriptor("POST", base + "/drafts/send", {id: draft_id}, cfg, {}))
+  }
+  return Err(__assistant_error("method_not_found", "unsupported Gmail assistant method"))
+}
+
+fn __gmail_message(args: dict) -> Result<dict, GoogleAssistantError> {
+  const raw = trim(to_string(args?.raw ?? ""))
+  const message_id = __required(args, "rfc822_message_id")
+  const fingerprint = trim(to_string(args?.external_action_fingerprint ?? ""))
+  if raw == "" || message_id == "" || fingerprint == "" {
+    return Err(
+      __assistant_error(
+        "missing_message_identity",
+        "raw MIME, RFC 822 Message-ID, and external-action fingerprint are required",
+      ),
+    )
+  }
+  if len(raw) > 10000000 {
+    return Err(__assistant_error("message_too_large", "raw MIME exceeds the connector limit"))
+  }
+  const decoded = try {
+    base64url_decode(raw)
+  }
+  if !is_ok(decoded) {
+    return Err(__assistant_error("invalid_raw_mime", "raw MIME must be base64url encoded"))
+  }
+  let declared_message_id = ""
+  const normalized_mime = regex_replace("\r\n", "\n", unwrap(decoded))
+  for line in normalized_mime.split("\n") {
+    if starts_with(lowercase(line), "message-id:") {
+      declared_message_id = trim(substring(line, len("message-id:"), len(line)))
+      break
+    }
+  }
+  if lowercase(declared_message_id) != lowercase(message_id) {
+    return Err(
+      __assistant_error(
+        "message_id_mismatch",
+        "RFC 822 Message-ID must exactly match the raw MIME header",
+      ),
+    )
+  }
+  let message = {raw: raw}
+  if args?.thread_id != nil || args?.threadId != nil {
+    message.threadId = args?.thread_id ?? args?.threadId
+  }
+  return Ok(message)
+}
+
+fn __reconciliation_request(
+  intent: ExternalActionIntent,
+  args: dict,
+  cfg: dict,
+) -> Result<GoogleAssistantRequest, GoogleAssistantError> {
+  if starts_with(intent.operation, "calendar.events.") {
+    const event_id = __calendar_event_id(intent, args)
+    if event_id == "" {
+      return Err(__assistant_error("missing_event_id", "calendar reconciliation requires event id"))
+    }
+    return google_assistant_request_descriptor(
+      "calendar.events.get",
+      args + {event_id: event_id},
+      cfg,
+    )
+  }
+  const message_id = __required(args, "rfc822_message_id")
+  if message_id == "" {
+    return Err(
+      __assistant_error(
+        "missing_rfc822_message_id",
+        "Gmail reconciliation requires RFC 822 Message-ID",
+      ),
+    )
+  }
+  const label = if intent.operation == "gmail.drafts.send"
+    || intent.operation
+    == "gmail.messages.send" {
+    "sent"
+  } else {
+    "drafts"
+  }
+  const query = "rfc822msgid:" + message_id + " in:" + label
+  const user = url_encode(__required(args, "user_id", "me"))
+  return Ok(
+    __descriptor(
+      "GET",
+      cfg.gmail_api_base_url + "/users/" + user + "/messages",
+      nil,
+      cfg,
+      {q: query, maxResults: 1},
+    ),
+  )
+}
+
+fn __reconciled(
+  intent: ExternalActionIntent,
+  args: dict,
+  response: any,
+) -> ExternalActionAdapterResult {
+  if starts_with(intent.operation, "calendar.events.") {
+    if intent.operation == "calendar.events.delete" {
+      return __indeterminate("event_still_exists")
+    }
+    const marker = response?.extendedProperties?.private?.harnActionFingerprint
+    if marker != intent.fingerprint {
+      return __indeterminate("event_fingerprint_mismatch")
+    }
+    const event_id = trim(to_string(response?.id ?? __calendar_event_id(intent, args)))
+    return {
+      outcome: "confirmed",
+      provider_action_id: event_id,
+      evidence_refs: [__calendar_event_ref(args, event_id)],
+    }
+  }
+  const messages = response?.messages ?? []
+  if len(messages) == 0 {
+    return __indeterminate("message_not_found")
+  }
+  const message_id = trim(to_string(messages[0]?.id ?? ""))
+  if message_id == "" {
+    return __indeterminate("message_result_missing_id")
+  }
+  return {
+    outcome: "confirmed",
+    provider_action_id: message_id,
+    evidence_refs: ["google-gmail:messages/" + message_id],
+  }
+}
+
+fn __confirmed(
+  intent: ExternalActionIntent,
+  response: any,
+  args: dict,
+) -> ExternalActionAdapterResult {
+  if starts_with(intent.operation, "calendar.events.") {
+    const event_id = trim(to_string(response?.id ?? __calendar_event_id(intent, args)))
+    return {
+      outcome: "confirmed",
+      provider_action_id: event_id,
+      evidence_refs: [__calendar_event_ref(args, event_id)],
+    }
+  }
+  const provider_id = trim(to_string(response?.id ?? response?.message?.id ?? args?.draft_id ?? ""))
+  if provider_id == "" {
+    return __indeterminate("provider_response_missing_id")
+  }
+  const kind = if intent.operation == "gmail.drafts.create"
+    || intent.operation
+    == "gmail.drafts.update" {
+    "drafts"
+  } else {
+    "messages"
+  }
+  return {
+    outcome: "confirmed",
+    provider_action_id: provider_id,
+    evidence_refs: ["google-gmail:" + kind + "/" + provider_id],
+  }
+}
+
+fn __dispatch_error(error: GoogleAssistantError) -> ExternalActionAdapterResult {
+  const status = error.status
+  const code = __error_code(error)
+  if type_of(status) == "int" && status >= 400 && status < 500 && status != 408
+    && status
+    != 429 {
+    return __failed(code)
+  }
+  return __indeterminate(code)
+}
+
+fn __assistant_request(
+  net: HarnessNet,
+  descriptor: GoogleAssistantRequest,
+) -> Result<unknown, GoogleAssistantError> {
+  let options = {headers: descriptor.headers}
+  if descriptor.body != nil {
+    options.body = descriptor.body
+  }
+  const response = try {
+    net.request(descriptor.method, descriptor.url, options)
+  }
+  if !is_ok(response) {
+    return Err(__assistant_error("transport", "Google Workspace request transport failed"))
+  }
+  const http = unwrap(response)
+  const body = trim(to_string(http.body ?? ""))
+  const decoded = try {
+    body == "" ? {} : json_parse(body)
+  }
+  if !is_ok(decoded) {
+    let error = __assistant_error("invalid_response", "Google Workspace returned invalid JSON")
+    error.status = http.status
+    return Err(error)
+  }
+  const payload = unwrap(decoded)
+  if http.status < 200 || http.status >= 300 {
+    let error = __assistant_error(
+      trim(to_string(payload?.error?.status ?? payload?.error?.code ?? "provider_error")),
+      trim(to_string(payload?.error?.message ?? "Google Workspace request failed")),
+    )
+    error.status = http.status
+    return Err(error)
+  }
+  return Ok(payload)
+}
+
+fn __descriptor(
+  method: string,
+  url: string,
+  body: unknown,
+  cfg: dict,
+  query: dict,
+  extra_headers: dict = {},
+) -> GoogleAssistantRequest {
+  const headers = {
+    Authorization: "Bearer " + cfg.access_token,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  }
+    + extra_headers
+  let descriptor = GoogleAssistantRequest {
+    method: method,
+    url: __query_url(url, query),
+    headers: headers,
+  }
+  if body != nil {
+    descriptor.body = json_stringify(body)
+  }
+  return descriptor
+}
+
+fn __query_url(url: string, query: dict) -> string {
+  let parts: list<string> = []
+  for key in query.keys().sort() {
+    const value = query[key]
+    if value != nil && trim(to_string(value)) != "" {
+      parts = parts + [url_encode(key) + "=" + url_encode(to_string(value))]
+    }
+  }
+  return len(parts) == 0 ? url : url + "?" + parts.join("&")
+}
+
+fn __calendar_query(args: dict) -> dict {
+  let query = {}
+  const aliases = {
+    time_min: "timeMin",
+    time_max: "timeMax",
+    time_zone: "timeZone",
+    page_token: "pageToken",
+    max_results: "maxResults",
+    single_events: "singleEvents",
+    order_by: "orderBy",
+    send_updates: "sendUpdates",
+    conference_data_version: "conferenceDataVersion",
+  }
+  for key in aliases.keys() {
+    const value = args[key] ?? args[aliases[key]]
+    if value != nil {
+      query[aliases[key]] = value
+    }
+  }
+  return query
+}
+
+fn __gmail_query(args: dict) -> dict {
+  let query = {}
+  for key in ["q", "pageToken", "maxResults", "format"] {
+    const snake = if key == "pageToken" {
+      "page_token"
+    } else if key == "maxResults" {
+      "max_results"
+    } else {
+      key
+    }
+    const value = args[snake] ?? args[key]
+    if value != nil {
+      query[key] = value
+    }
+  }
+  return query
+}
+
+fn __assistant_method(method: string) -> GoogleAssistantMethod? {
+  const canonical = trim(method)
+  for descriptor in GOOGLE_ASSISTANT_METHODS {
+    if descriptor.name == canonical {
+      return descriptor
+    }
+  }
+  return nil
+}
+
+fn __calendar_event_id(intent: ExternalActionIntent, args: dict) -> string {
+  return __required(args, "event_id", __idempotent_calendar_id(args))
+}
+
+fn __idempotent_calendar_id(args: dict) -> string {
+  const key = trim(to_string(args?.idempotency_key ?? ""))
+  return key == "" ? "" : "harn" + substring(sha256(key), 0, 28)
+}
+
+fn __calendar_event_ref(args: dict, event_id: string) -> string {
+  return "google-calendar:calendars/"
+    + __required(args, "calendar_id", "primary")
+    + "/events/"
+    + event_id
+}
+
+fn __if_match(args: dict) -> dict {
+  const etag = trim(to_string(args?.etag ?? ""))
+  return etag == "" ? {} : {"If-Match": etag}
+}
+
+fn __required(args: dict, key: string, fallback: string = "") -> string {
+  const camel = if key == "calendar_id" {
+    "calendarId"
+  } else if key == "event_id" {
+    "eventId"
+  } else if key == "draft_id" {
+    "draftId"
+  } else if key == "user_id" {
+    "userId"
+  } else if key == "rfc822_message_id" {
+    "rfc822MessageId"
+  } else {
+    key
+  }
+  return trim(to_string(args[key] ?? args[camel] ?? fallback))
+}
+
+fn __error_code(error: GoogleAssistantError) -> string {
+  const raw = lowercase(trim(to_string(error.code ?? "provider_error")))
+  const cleaned = regex_replace("[^a-z0-9._:-]", "_", raw)
+  return cleaned == "" ? "provider_error" : substring(cleaned, 0, min(len(cleaned), 128))
+}
+
+fn __failed(code: string) -> ExternalActionAdapterResult {
+  return {outcome: "failed_before_dispatch", error_code: code}
+}
+
+fn __indeterminate(code: string) -> ExternalActionAdapterResult {
+  return {outcome: "indeterminate", error_code: code}
+}
+
+fn __assistant_error(code: string, message: string) -> GoogleAssistantError {
+  return GoogleAssistantError {provider: "google_workspace", code: code, message: message}
+}

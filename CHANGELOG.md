@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add separately governed Calendar free/busy, event read/write, Gmail draft,
+  and Gmail send capabilities.
+- Route Google writes through Harn exact external-action grants with stable
+  Calendar IDs, provider markers, stale-update protection, bounded receipts,
+  and read-only reconciliation.
+
 ## 0.1.1
 
 - Add Gmail readonly outbound methods for message search, message retrieval, and
