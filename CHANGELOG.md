@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix Google Desktop app setup to use PKCE without a client secret and include
+  the required client ID in the generated setup command.
 - Add separately governed Calendar free/busy, event read/write, Gmail draft,
   and Gmail send capabilities.
 - Route Google writes through Harn exact external-action grants with stable
