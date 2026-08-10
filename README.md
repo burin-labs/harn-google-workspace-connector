@@ -56,8 +56,20 @@ Harn capabilities and rejects a send attempted with a draft-only action grant.
 This application-level separation is load-bearing; OAuth alone cannot express
 it. Enabling the new scopes requires an interactive Google consent flow.
 
-Start browser-based setup with `harn connect google_workspace`. Check its
-status with `harn connect status --connector google_workspace --json`.
+Use a Google OAuth client whose application type is **Desktop app**. Then start
+browser-based setup with:
+
+```sh
+harn connect google_workspace \
+  --client-id YOUR_GOOGLE_DESKTOP_CLIENT_ID
+```
+
+Harn uses PKCE and Google's public desktop-client flow, so no client secret is
+needed or placed in a command. Check the result with:
+
+```sh
+harn connect status --connector google_workspace --json
+```
 
 ## Useful methods
 
