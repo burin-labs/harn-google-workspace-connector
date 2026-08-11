@@ -133,7 +133,10 @@ pub fn google_assistant_read(
 }
 
 /** Build the two-method Google Workspace external-action adapter. */
-pub fn google_workspace_external_action_adapter(cfg: dict) -> ExternalActionAdapter {
+pub fn google_workspace_external_action_adapter(
+  _harness: HarnessNet,
+  cfg: dict,
+) -> ExternalActionAdapter {
   const dispatch =
     fn(harness: Harness, request: ExternalActionDispatchRequest) { return __assistant_dispatch(
     harness.net,
