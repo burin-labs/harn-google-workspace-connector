@@ -333,12 +333,12 @@ pub fn request_descriptor(method, args = nil) {
 }
 
 /** Build the Google adapter consumed by std/external_action. */
-pub fn external_action_adapter(args = nil) {
+pub fn external_action_adapter(net: HarnessNet, args = nil) {
   const cfg = __config(args ?? {})
   if is_err(cfg) {
     return cfg
   }
-  return google_workspace_external_action_adapter(unwrap(cfg))
+  return google_workspace_external_action_adapter(net, unwrap(cfg))
 }
 
 /** Poll Drive changes and normalize changed file events from a Harn-managed cursor. */
