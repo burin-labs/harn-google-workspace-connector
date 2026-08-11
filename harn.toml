@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "Pure-Harn Google Workspace connector for Drive/Docs/Gmail artifacts, webhooks, polling, and outbound API dispatch."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/burin-labs/harn-google-workspace-connector"
-harn = ">=0.10,<0.11"
+harn = ">=0.10.70,<0.11"
 docs_url = "README.md"
 provenance = "https://github.com/burin-labs/harn-google-workspace-connector/releases/tag/v0.1.0"
 
@@ -20,8 +20,8 @@ capabilities = ["webhook", "oauth", "pagination"]
 resource = "https://www.googleapis.com/"
 authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
 token_endpoint = "https://oauth2.googleapis.com/token"
-scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.readonly"
-token_endpoint_auth_method = "client_secret_post"
+scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events.freebusy https://www.googleapis.com/auth/calendar.events"
+token_endpoint_auth_method = "none"
 
 [providers.setup]
 auth_type = "oauth2"
@@ -30,9 +30,19 @@ required_scopes = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.events.freebusy",
+  "https://www.googleapis.com/auth/calendar.events",
 ]
 required_secrets = ["google_workspace/access-token"]
-setup_command = ["harn", "connect", "google_workspace"]
+setup_command = [
+  "harn",
+  "connect",
+  "google_workspace",
+  "--client-id",
+  "YOUR_GOOGLE_DESKTOP_CLIENT_ID",
+]
 validation_command = ["harn", "connect", "status", "--connector", "google_workspace", "--json"]
 
 [[providers.setup.health_checks]]
@@ -41,10 +51,10 @@ kind = "secret"
 secret = "google_workspace/access-token"
 
 [providers.setup.recovery]
-missing_auth = "Run `harn connect google_workspace` before enabling Google Workspace bindings."
+missing_auth = "Create or find a Google Desktop app client ID, then run `harn connect google_workspace --client-id YOUR_GOOGLE_DESKTOP_CLIENT_ID`."
 expired_credentials = "Refresh the OAuth access token and rerun Google Workspace validation."
 revoked_credentials = "Reauthorize Google Workspace and replace google_workspace/access-token."
-missing_scopes = "Grant Drive, Docs, and Gmail scopes required by the configured artifact workflow."
+missing_scopes = "Grant only the Drive, Docs, Gmail, and Calendar scopes required by the enabled capabilities."
 inaccessible_resource = "Confirm the selected Drive file or folder is visible to the authorized account."
 transient_provider_outage = "Retry after Google Workspace APIs and push channels are healthy."
 
