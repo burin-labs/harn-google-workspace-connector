@@ -16,6 +16,268 @@ id = "google_workspace"
 connector = { harn = "src/lib.harn" }
 capabilities = ["webhook", "oauth", "pagination"]
 
+[providers.service]
+name = "Google"
+description = "Connects Drive, Docs, Gmail, and Calendar through one Google account."
+
+[[providers.service.operations]]
+id = "drive.files.get"
+capability = "drive.files.read"
+purpose = "Read one Google Drive file."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["error_body"]
+
+[[providers.service.operations]]
+id = "drive.files.list"
+capability = "drive.files.read"
+purpose = "List Google Drive files."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["error_body"]
+
+[[providers.service.operations]]
+id = "drive.files.export"
+capability = "drive.files.read"
+purpose = "Export a Google Drive file."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "drive.changes.getStartPageToken"
+capability = "drive.changes.read"
+purpose = "Start tracking Google Drive changes."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["error_body"]
+
+[[providers.service.operations]]
+id = "drive.changes.list"
+capability = "drive.changes.read"
+purpose = "Read Google Drive changes."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["error_body"]
+
+[[providers.service.operations]]
+id = "docs.documents.get"
+capability = "docs.documents.read"
+purpose = "Read one Google document."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.messages.list"
+capability = "gmail.messages.read"
+purpose = "List Gmail messages."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.messages.get"
+capability = "gmail.messages.read"
+purpose = "Read one Gmail message."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.messages.attachments.get"
+capability = "gmail.messages.read"
+purpose = "Read one Gmail attachment."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.freebusy.query"
+capability = "calendar.freebusy.read"
+purpose = "Check Google Calendar availability."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.events.list"
+capability = "calendar.events.read"
+purpose = "List Google Calendar events."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.events.get"
+capability = "calendar.events.read"
+purpose = "Read one Google Calendar event."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.drafts.list"
+capability = "gmail.drafts.read"
+purpose = "List Gmail drafts."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.drafts.get"
+capability = "gmail.drafts.read"
+purpose = "Read one Gmail draft."
+effect = "read"
+environments = ["live"]
+evidence = ["current_provider_state"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "artifact.export_request"
+capability = "workspace.artifacts.read"
+purpose = "Prepare a Google Workspace artifact for export."
+effect = "read"
+environments = ["live"]
+redaction = ["response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "drive.files.create"
+capability = "drive.files.write"
+purpose = "Create the exact Google Drive file reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "drive.files.update"
+capability = "drive.files.write"
+purpose = "Update the exact Google Drive file reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "drive.changes.watch"
+capability = "drive.changes.write"
+purpose = "Create the Google Drive change watch reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "docs.documents.create"
+capability = "docs.documents.write"
+purpose = "Create the Google document reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "docs.documents.batchUpdate"
+capability = "docs.documents.write"
+purpose = "Apply the reviewed changes to a Google document."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "artifact.import_request"
+capability = "workspace.artifacts.write"
+purpose = "Import the reviewed artifact into Google Workspace."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.events.create"
+capability = "calendar.events.write"
+purpose = "Create the exact Google Calendar event reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.events.update"
+capability = "calendar.events.write"
+purpose = "Update the exact Google Calendar event reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation", "current_provider_state"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "calendar.events.delete"
+capability = "calendar.events.write"
+purpose = "Delete the exact Google Calendar event reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation", "current_provider_state"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.drafts.create"
+capability = "gmail.drafts.write"
+purpose = "Create the exact Gmail draft reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.drafts.update"
+capability = "gmail.drafts.write"
+purpose = "Update the exact Gmail draft reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation", "current_provider_state"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.drafts.send"
+capability = "gmail.send"
+purpose = "Send the exact Gmail draft reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation", "current_provider_state"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
+[[providers.service.operations]]
+id = "gmail.messages.send"
+capability = "gmail.send"
+purpose = "Send the exact Gmail message reviewed by the user."
+effect = "consequential"
+environments = ["live"]
+evidence = ["user_confirmation"]
+reconciliation = "required"
+redaction = ["request_body", "response_body", "error_body"]
+
 [providers.oauth]
 resource = "https://www.googleapis.com/"
 authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -61,7 +323,7 @@ transient_provider_outage = "Retry after Google Workspace APIs and push channels
 [dependencies]
 
 [connector_contract]
-version = 1
+version = 2
 
 [[connector_contract.fixtures]]
 provider = "google_workspace"
