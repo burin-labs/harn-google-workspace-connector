@@ -354,13 +354,13 @@ pub fn request_descriptor(method, args = nil) {
 }
 
 /** Build the Google adapter consumed by std/external_action. */
-pub fn external_action_adapter(net: HarnessNet, args = nil) {
+pub fn external_action_adapter(net: Harness, args = nil) {
   const cfg = __config(args ?? {})
   if is_err(cfg) {
     return cfg
   }
   const normalized_cfg = unwrap(cfg)
-  const assistant = google_workspace_external_action_adapter(net, normalized_cfg)
+  const assistant = google_workspace_external_action_adapter(net.net, normalized_cfg)
   const dispatch =
     fn(harness: Harness, request: GoogleDispatchRequest) { return __external_action_dispatch(
     harness,
