@@ -298,6 +298,11 @@ required_scopes = [
   "https://www.googleapis.com/auth/calendar.events",
 ]
 required_secrets = ["google_workspace/access-token"]
+
+[[providers.setup.credential_environment]]
+secret = "google_workspace/access-token"
+environment_names = ["GOOGLE_WORKSPACE_ACCESS_TOKEN"]
+
 setup_command = [
   "harn",
   "connect",
