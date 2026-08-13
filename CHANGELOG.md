@@ -9,6 +9,8 @@
 - Route Google writes through Harn exact external-action grants with stable
   Calendar IDs, provider markers, stale-update protection, bounded receipts,
   and read-only reconciliation.
+- Reject unsupported environment labels before transport and route Drive and
+  Docs writes through the same exact external-action adapter.
 
 ## 0.1.1
 

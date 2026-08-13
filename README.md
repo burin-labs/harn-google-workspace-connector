@@ -102,10 +102,13 @@ harn connect status --connector google_workspace --json
 - `artifact.export_request`
 - `artifact.import_request`
 
-Read methods use `call(...)`. Calendar event writes, Gmail draft writes, and
-send methods deliberately reject direct calls with `external_action_required`.
-Build an adapter with `external_action_adapter()` and pass it to
-`external_action_execute(...)` from `std/external_action`.
+Read methods and the two artifact request builders use `call(...)`. Every Google
+API write deliberately rejects direct calls with `external_action_required`;
+legacy `approved` and `_approved` flags grant no authority. Build one adapter
+with `external_action_adapter()` and pass it to `external_action_execute(...)`
+from `std/external_action`. The production adapter accepts only `live` intents,
+matching the service manifest. Tests use mocked transport with live-shaped
+intents instead of relabeling Google effects as test operations.
 
 Calendar creates derive a provider event ID from the Harn idempotency key and
 store the exact action fingerprint in the event's private extended properties.

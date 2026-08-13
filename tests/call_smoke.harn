@@ -16,7 +16,6 @@ pipeline test_call_smoke(harness: Harness) {
   expect_eq(initialized.ctx.access_token, "secret_access", "dict init context is retained")
   harness.testing.http_mock_clear()
   const drive = "https://www.googleapis.com/drive/v3"
-  const upload = "https://www.googleapis.com/upload/drive/v3"
   const docs = "https://docs.googleapis.com/v1"
   const gmail = "https://gmail.googleapis.com/gmail/v1"
   harness.testing.http_mock(
@@ -26,21 +25,11 @@ pipeline test_call_smoke(harness: Harness) {
       responses: [
         {status: 200, body: "{\"id\":\"file_123\",\"name\":\"Report\"}", headers: {}},
         {status: 200, body: "{\"files\":[{\"id\":\"file_123\"}]}", headers: {}},
-        {
-          status: 200,
-          body: "{\"id\":\"uploaded\",\"mimeType\":\"application/vnd.google-apps.document\"}",
-          headers: {},
-        },
         {status: 200, body: "{\"startPageToken\":\"start_123\"}", headers: {}},
         {
           status: 200,
           body:
             "{\"changes\":[{\"fileId\":\"file_123\",\"file\":{\"id\":\"file_123\",\"name\":\"Report\"}}],\"newStartPageToken\":\"next_123\"}",
-          headers: {},
-        },
-        {
-          status: 200,
-          body: "{\"id\":\"channel_123\",\"resourceId\":\"resource_123\"}",
           headers: {},
         },
       ],
@@ -52,8 +41,6 @@ pipeline test_call_smoke(harness: Harness) {
     {
       responses: [
         {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
-        {status: 200, body: "{\"documentId\":\"doc_123\",\"title\":\"Report\"}", headers: {}},
-        {status: 200, body: "{\"replies\":[]}", headers: {}},
       ],
     },
   )
@@ -85,9 +72,9 @@ pipeline test_call_smoke(harness: Harness) {
     "drive.files.create",
     {name: "Report", mimeType: "application/vnd.google-apps.document"},
   )
-  expect(is_err(create_rejected), "mutating Drive create requires approval")
-  expect_eq(unwrap_err(create_rejected).code, "approval_required", "approval code")
-  call(
+  expect(is_err(create_rejected), "mutating Drive create requires an external action")
+  expect_eq(unwrap_err(create_rejected).code, "external_action_required", "governance code")
+  const legacy_approved = call(
     harness,
     "drive.files.create",
     {
@@ -97,31 +84,43 @@ pipeline test_call_smoke(harness: Harness) {
       _approved: true,
     },
   )
+  expect(is_err(legacy_approved), "legacy approval flag cannot bypass external-action policy")
+  expect_eq(
+    unwrap_err(legacy_approved).code,
+    "external_action_required",
+    "legacy approval flag is ignored",
+  )
+  for governed in [
+    {method: "drive.files.update", args: {file_id: "file_123"}},
+    {
+      method: "drive.changes.watch",
+      args: {
+        page_token: "start_123",
+        id: "chan_123",
+        type: "web_hook",
+        address: "https://example.test/hook",
+      },
+    },
+    {method: "docs.documents.create", args: {title: "Report"}},
+    {
+      method: "docs.documents.batchUpdate",
+      args: {
+        document_id: "doc_123",
+        requests: [{insertText: {location: {index: 1}, text: "Hello"}}],
+      },
+    },
+  ] {
+    const denied = call(harness, governed.method, governed.args + {_approved: true})
+    expect(is_err(denied), governed.method + " must not use the generic call path")
+    expect_eq(
+      unwrap_err(denied).code,
+      "external_action_required",
+      governed.method + " ignores legacy auto-approval",
+    )
+  }
   call(harness, "drive.changes.getStartPageToken", {})
   call(harness, "drive.changes.list", {page_token: "start_123", page_size: 5})
-  call(
-    harness,
-    "drive.changes.watch",
-    {
-      page_token: "start_123",
-      id: "chan_123",
-      type: "web_hook",
-      address: "https://example.test/hook",
-      _approved: true,
-    },
-  )
-  const created = call(harness, "docs.documents.create", {title: "Report", _approved: true})
-  expect_eq(created.documentId, "doc_123", "docs create response")
   call(harness, "docs.documents.get", {document_id: "doc_123"})
-  call(
-    harness,
-    "docs.documents.batchUpdate",
-    {
-      document_id: "doc_123",
-      requests: [{insertText: {location: {index: 1}, text: "Hello"}}],
-      _approved: true,
-    },
-  )
   const gmail_messages = call(
     harness,
     "gmail.messages.list",
@@ -137,27 +136,21 @@ pipeline test_call_smoke(harness: Harness) {
   )
   expect_eq(attachment.data, "cmVjZWlwdA", "gmail attachment response")
   const calls = harness.testing.http_mock_calls({include_sensitive: true})
-  expect_eq(len(calls), 12, "all expected outbound methods dispatched")
+  expect_eq(len(calls), 8, "only read operations reached Google")
   expect_eq(calls[0].method, "GET", "files.get uses GET")
   expect_eq(calls[0].url, drive + "/files/file_123?fields=id%2Cname", "files.get URL")
   expect_eq(calls[0].headers.authorization, "Bearer secret_access", "authorization header sent")
-  expect_eq(calls[2].url, upload + "/files?uploadType=multipart", "upload URL")
-  const create_body: {name: string, access_token?: string} = json_parse(calls[2].body)
-  expect_eq(create_body.name, "Report", "create body name")
-  expect(create_body.access_token == nil, "access token not sent in body")
-  expect_eq(calls[4].url, drive + "/changes?pageSize=5&pageToken=start_123", "changes list URL")
-  const docs_create_body: {title: string} = json_parse(calls[6].body)
-  expect_eq(docs_create_body.title, "Report", "docs create title")
-  expect_eq(calls[8].url, docs + "/documents/doc_123:batchUpdate", "docs batchUpdate URL")
+  expect_eq(calls[3].url, drive + "/changes?pageSize=5&pageToken=start_123", "changes list URL")
+  expect_eq(calls[4].url, docs + "/documents/doc_123", "docs get URL")
   expect_eq(
-    calls[9].url,
+    calls[5].url,
     gmail + "/users/me/messages?maxResults=5&q=receipt%20newer_than%3A30d",
     "gmail list URL",
   )
-  expect_eq(calls[9].headers.authorization, "Bearer secret_access", "gmail authorization header")
-  expect_eq(calls[10].url, gmail + "/users/me/messages/msg_123?format=full", "gmail get URL")
+  expect_eq(calls[5].headers.authorization, "Bearer secret_access", "gmail authorization header")
+  expect_eq(calls[6].url, gmail + "/users/me/messages/msg_123?format=full", "gmail get URL")
   expect_eq(
-    calls[11].url,
+    calls[7].url,
     gmail + "/users/me/messages/msg_123/attachments/att_123",
     "gmail attachment URL",
   )

@@ -202,10 +202,9 @@ redaction = ["request_body", "response_body", "error_body"]
 [[providers.service.operations]]
 id = "artifact.import_request"
 capability = "workspace.artifacts.write"
-purpose = "Import the reviewed artifact into Google Workspace."
-effect = "consequential"
+purpose = "Prepare an import request without sending it to Google Workspace."
+effect = "read"
 environments = ["live"]
-evidence = ["user_confirmation"]
 redaction = ["request_body", "response_body", "error_body"]
 
 [[providers.service.operations]]
