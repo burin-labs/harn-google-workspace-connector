@@ -19,7 +19,7 @@ fn grant(intent) {
     intent,
     {
       authorized_by: {kind: "user", id: "user-1"},
-      authorization_method: "test_fixture",
+      authorization_method: "manual",
       authentication_assurance: "session",
       issued_at_ms: 0,
       expires_at_ms: 9999999999999,
@@ -131,7 +131,7 @@ pipeline test_assistant_smoke(harness: Harness) {
       provider: "google_workspace",
       capability: "calendar.events.write",
       operation: "calendar.events.create",
-      environment: "test",
+      environment: "live",
       payload: {
         calendar_id: "primary",
         event: {
@@ -163,13 +163,48 @@ pipeline test_assistant_smoke(harness: Harness) {
   )
   const adapter = external_action_adapter(harness.net)
   expect(!is_err(adapter), "configured external-action adapter builds")
+  const mislabeled_test_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "calendar.events.write",
+      operation: "calendar.events.create",
+      environment: "test",
+      payload: {
+        calendar_id: "primary",
+        event: {
+          summary: "Must not dispatch",
+          start: {dateTime: "2026-08-12T09:00:00-07:00", timeZone: "America/Los_Angeles"},
+          end: {dateTime: "2026-08-12T09:30:00-07:00", timeZone: "America/Los_Angeles"},
+        },
+      },
+      display: {summary: "Attempt a test-labeled Google write"},
+    },
+  )
+  const mislabeled_test = external_action_execute(
+    harness,
+    mislabeled_test_intent,
+    grant(mislabeled_test_intent),
+    adapter,
+  )
+  expect_eq(
+    mislabeled_test.status,
+    "failed_before_dispatch",
+    "Google rejects environments that its service contract does not declare",
+  )
+  expect_eq(mislabeled_test.error?.code, "live_environment_required", "environment denial is typed")
+  expect_eq(
+    len(harness.testing.http_mock_calls({include_sensitive: false})),
+    0,
+    "environment denial performs no provider request",
+  )
   const crossed_capability = external_action_intent(
     {
       actor: {kind: "user", id: "user-1"},
       provider: "google_workspace",
       capability: "gmail.drafts.write",
       operation: "gmail.messages.send",
-      environment: "test",
+      environment: "live",
       payload: {
         raw:
           "RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NClN1YmplY3Q6IENyb3NzZWQNCk1lc3NhZ2UtSUQ6IDxoYXJuLWNyb3NzZWRAZXhhbXBsZS5jb20-DQoNCkhlbGxvDQo",
@@ -197,13 +232,106 @@ pipeline test_assistant_smoke(harness: Harness) {
   )
   harness.testing.http_mock_clear()
   harness.runtime.checkpoint_clear()
+  const drive_create_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "drive.files.write",
+      operation: "drive.files.create",
+      environment: "live",
+      payload: {
+        name: "Trip plan",
+        mimeType: "application/vnd.google-apps.document",
+        upload_type: "multipart",
+      },
+      display: {summary: "Create Trip plan in Google Drive"},
+    },
+  )
+  const test_drive_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "drive.files.write",
+      operation: "drive.files.create",
+      environment: "test",
+      payload: drive_create_intent.payload,
+      display: {summary: "Attempt a test-labeled Drive write"},
+    },
+  )
+  const test_drive = external_action_execute(
+    harness,
+    test_drive_intent,
+    grant(test_drive_intent),
+    adapter,
+  )
+  expect_eq(test_drive.status, "failed_before_dispatch", "Drive rejects a false test environment")
+  expect_eq(
+    test_drive.error?.code,
+    "live_environment_required",
+    "Drive environment denial is typed",
+  )
+  const crossed_drive_intent = external_action_intent(
+    {
+      actor: {kind: "user", id: "user-1"},
+      provider: "google_workspace",
+      capability: "gmail.drafts.write",
+      operation: "drive.files.create",
+      environment: "live",
+      payload: drive_create_intent.payload,
+      display: {summary: "Attempt Drive create with Gmail authority"},
+    },
+  )
+  const crossed_drive = external_action_execute(
+    harness,
+    crossed_drive_intent,
+    grant(crossed_drive_intent),
+    adapter,
+  )
+  expect_eq(crossed_drive.status, "failed_before_dispatch", "Gmail grant cannot invoke Drive")
+  expect_eq(crossed_drive.error?.code, "capability_mismatch", "Drive capability crossing is typed")
+  expect_eq(
+    len(harness.testing.http_mock_calls({include_sensitive: false})),
+    0,
+    "Drive environment and capability denials perform no provider request",
+  )
+  harness.testing.http_mock(
+    "POST",
+    "https://www.googleapis.com/upload/drive/v3/files*",
+    {
+      responses: [
+        {status: 200, body: "{\"id\":\"file_governed_123\",\"name\":\"Trip plan\"}", headers: {}},
+      ],
+    },
+  )
+  const drive_created = external_action_execute(
+    harness,
+    drive_create_intent,
+    grant(drive_create_intent),
+    adapter,
+  )
+  const drive_replay = external_action_execute(
+    harness,
+    drive_create_intent,
+    grant(drive_create_intent),
+    adapter,
+  )
+  expect_eq(drive_created.status, "confirmed", "Drive create uses the governed adapter")
+  expect_eq(drive_created.provider_action_id, "file_governed_123", "Drive receipt keeps file id")
+  expect_eq(drive_replay.id, drive_created.id, "Drive duplicate delivery replays its receipt")
+  expect_eq(
+    len(harness.testing.http_mock_calls({include_sensitive: false})),
+    1,
+    "Drive replay does not create a second file",
+  )
+  harness.testing.http_mock_clear()
+  harness.runtime.checkpoint_clear()
   const send_intent = external_action_intent(
     {
       actor: {kind: "user", id: "user-1"},
       provider: "google_workspace",
       capability: "gmail.send",
       operation: "gmail.messages.send",
-      environment: "test",
+      environment: "live",
       payload: {
         raw:
           "RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NClN1YmplY3Q6IFN0YXR1cw0KTWVzc2FnZS1JRDogPGhhcm4tMTIzQGV4YW1wbGUuY29tPg0KDQpIZWxsbw0K",

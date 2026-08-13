@@ -1,4 +1,10 @@
 import {
+  ExternalActionAdapter,
+  ExternalActionAdapterResult,
+  ExternalActionDispatchRequest,
+  ExternalActionReconcileRequest,
+} from "std/external_action/contracts"
+import {
   google_assistant_has_method,
   google_assistant_methods,
   google_assistant_read,
@@ -6,6 +12,10 @@ import {
   google_assistant_requires_external_action,
   google_workspace_external_action_adapter,
 } from "./assistant"
+
+type GoogleDispatchRequest = ExternalActionDispatchRequest
+
+type GoogleReconcileRequest = ExternalActionReconcileRequest
 
 const GOOGLE_WORKSPACE_PROVIDER_ID = "google_workspace"
 
@@ -48,14 +58,13 @@ const GOOGLE_OUTBOUND_METHODS = [
   "artifact.import_request",
 ]
 
-const GOOGLE_MUTATING_METHODS = [
-  "drive.files.create",
-  "drive.files.update",
-  "drive.changes.watch",
-  "docs.documents.create",
-  "docs.documents.batchUpdate",
-  "artifact.import_request",
-]
+const GOOGLE_GOVERNED_METHOD_CAPABILITIES = {
+  "drive.files.create": "drive.files.write",
+  "drive.files.update": "drive.files.write",
+  "drive.changes.watch": "drive.changes.write",
+  "docs.documents.create": "docs.documents.write",
+  "docs.documents.batchUpdate": "docs.documents.write",
+}
 
 type GoogleWorkspaceConnectorState = {
   initialized: bool,
@@ -87,7 +96,16 @@ pub fn kinds() {
 pub fn methods() {
   let out = []
   for name in GOOGLE_OUTBOUND_METHODS {
-    out = out + [{name: name, requires_approval: contains(GOOGLE_MUTATING_METHODS, name)}]
+    const capability = GOOGLE_GOVERNED_METHOD_CAPABILITIES[name]
+    out = out
+      + [
+      {
+        name: name,
+        capability: capability,
+        requires_approval: capability != nil,
+        requires_external_action: capability != nil,
+      },
+    ]
   }
   for descriptor in google_assistant_methods() {
     out = out
@@ -305,8 +323,11 @@ pub fn call(harness: Harness, method, args = nil) {
     }
     return google_assistant_read(harness.net, name, args ?? {}, unwrap(assistant_cfg))
   }
-  if contains(GOOGLE_MUTATING_METHODS, name) && !(args?._approved ?? args?.approved ?? false) {
-    return __err("approval_required", "google workspace method `" + name + "` requires approval")
+  if GOOGLE_GOVERNED_METHOD_CAPABILITIES[name] != nil {
+    return __err(
+      "external_action_required",
+      "google workspace method `" + name + "` requires an exact external-action grant",
+    )
   }
   const cfg = __config(args ?? {})
   if is_err(cfg) {
@@ -338,7 +359,117 @@ pub fn external_action_adapter(net: HarnessNet, args = nil) {
   if is_err(cfg) {
     return cfg
   }
-  return google_workspace_external_action_adapter(net, unwrap(cfg))
+  const normalized_cfg = unwrap(cfg)
+  const assistant = google_workspace_external_action_adapter(net, normalized_cfg)
+  const dispatch =
+    fn(harness: Harness, request: GoogleDispatchRequest) { return __external_action_dispatch(
+    harness,
+    request,
+    normalized_cfg,
+    assistant,
+  ) }
+  const reconcile =
+    fn(harness: Harness, request: GoogleReconcileRequest) { return __external_action_reconcile(
+    harness,
+    request,
+    assistant,
+  ) }
+  return {id: "google_workspace.v2", dispatch: dispatch, reconcile: reconcile}
+}
+
+fn __external_action_dispatch(
+  harness: Harness,
+  request: ExternalActionDispatchRequest,
+  cfg: dict,
+  assistant: ExternalActionAdapter,
+) -> ExternalActionAdapterResult {
+  const intent = request.intent
+  if google_assistant_has_method(intent.operation) {
+    return assistant.dispatch(harness, request)
+  }
+  const capability = GOOGLE_GOVERNED_METHOD_CAPABILITIES[intent.operation]
+  if intent.provider != GOOGLE_WORKSPACE_PROVIDER_ID || capability == nil {
+    return __action_failed("unsupported_external_action")
+  }
+  if intent.environment != "live" {
+    return __action_failed("live_environment_required")
+  }
+  if intent.capability != capability {
+    return __action_failed("capability_mismatch")
+  }
+  if type_of(intent.payload) != "dict" {
+    return __action_failed("invalid_action_payload")
+  }
+  const descriptor = __request_for_method(intent.operation, intent.payload, cfg)
+  if !is_ok(descriptor) {
+    return __action_failed(__action_error_code(unwrap_err(descriptor)))
+  }
+  const response = __google_request(harness.net, unwrap(descriptor))
+  if is_err(response) {
+    return __action_dispatch_error(unwrap_err(response))
+  }
+  return __action_confirmed(intent.operation, intent.payload, response)
+}
+
+fn __external_action_reconcile(
+  harness: Harness,
+  request: ExternalActionReconcileRequest,
+  assistant: ExternalActionAdapter,
+) -> ExternalActionAdapterResult {
+  if google_assistant_has_method(request.intent.operation) {
+    return assistant.reconcile(harness, request)
+  }
+  return __action_indeterminate("unsupported_reconciliation")
+}
+
+fn __action_confirmed(operation: string, args: dict, response) -> ExternalActionAdapterResult {
+  const provider_action_id = if starts_with(operation, "drive.files.") {
+    __text(response?.id ?? args?.file_id ?? args?.fileId)
+  } else if operation == "drive.changes.watch" {
+    __text(response?.resourceId ?? response?.id)
+  } else {
+    __text(response?.documentId ?? args?.document_id ?? args?.documentId)
+  }
+  if provider_action_id == "" {
+    return __action_indeterminate("provider_response_missing_id")
+  }
+  const kind = if starts_with(operation, "drive.files.") {
+    "files"
+  } else if operation == "drive.changes.watch" {
+    "channels"
+  } else {
+    "documents"
+  }
+  return {
+    outcome: "confirmed",
+    provider_action_id: provider_action_id,
+    evidence_refs: ["google-workspace:" + kind + "/" + provider_action_id],
+  }
+}
+
+fn __action_dispatch_error(error) -> ExternalActionAdapterResult {
+  const status = error?.status
+  const code = __action_error_code(error)
+  if type_of(status) == "int" && status >= 400 && status < 500 && status != 408
+    && status
+    != 429 {
+    return {outcome: "rejected", error_code: code}
+  }
+  return __action_indeterminate(code)
+}
+
+fn __action_error_code(error) -> string {
+  const raw = lowercase(__text(error?.code ?? "provider_error"))
+  const cleaned = regex_replace("[^a-z0-9._:-]", "_", raw)
+  return cleaned == "" ? "provider_error" : substring(cleaned, 0, min(len(cleaned), 128))
+}
+
+fn __action_failed(code: string) -> ExternalActionAdapterResult {
+  return {outcome: "failed_before_dispatch", error_code: code}
+}
+
+fn __action_indeterminate(code: string) -> ExternalActionAdapterResult {
+  return {outcome: "indeterminate", error_code: code}
 }
 
 /** Poll Drive changes and normalize changed file events from a Harn-managed cursor. */

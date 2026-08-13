@@ -132,7 +132,7 @@ pub fn google_assistant_read(
   return __assistant_request(net, unwrap(descriptor))
 }
 
-/** Build the two-method Google Workspace external-action adapter. */
+/** Build the Calendar/Gmail part of the Google Workspace external-action adapter. */
 pub fn google_workspace_external_action_adapter(
   _harness: HarnessNet,
   cfg: dict,
@@ -162,6 +162,9 @@ fn __assistant_dispatch(
   if intent.provider != "google_workspace" || method == nil || method.effect != "write" {
     return __failed("unsupported_external_action")
   }
+  if intent.environment != "live" {
+    return __failed("live_environment_required")
+  }
   if intent.capability != method.capability {
     return __failed("capability_mismatch")
   }
@@ -189,6 +192,9 @@ fn __assistant_reconcile(
   const method = __assistant_method(intent.operation)
   if intent.provider != "google_workspace" || method == nil || method.effect != "write" {
     return __indeterminate("unsupported_reconciliation")
+  }
+  if intent.environment != "live" {
+    return __indeterminate("live_environment_required")
   }
   const args_result = __action_args(intent)
   if !is_ok(args_result) {
