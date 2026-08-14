@@ -161,7 +161,7 @@ pipeline test_assistant_smoke(harness: Harness) {
       ],
     },
   )
-  const adapter = external_action_adapter(harness)
+  const adapter = external_action_adapter(harness.net)
   expect(!is_err(adapter), "configured external-action adapter builds")
   const mislabeled_test_intent = external_action_intent(
     {
