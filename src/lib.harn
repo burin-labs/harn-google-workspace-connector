@@ -99,24 +99,24 @@ pub fn methods() {
     const capability = GOOGLE_GOVERNED_METHOD_CAPABILITIES[name]
     out = out
       + [
-      {
-        name: name,
-        capability: capability,
-        requires_approval: capability != nil,
-        requires_external_action: capability != nil,
-      },
-    ]
+        {
+          name: name,
+          capability: capability,
+          requires_approval: capability != nil,
+          requires_external_action: capability != nil,
+        },
+      ]
   }
   for descriptor in google_assistant_methods() {
     out = out
       + [
-      {
-        name: descriptor.name,
-        capability: descriptor.capability,
-        requires_approval: descriptor.effect == "write",
-        requires_external_action: descriptor.effect == "write",
-      },
-    ]
+        {
+          name: descriptor.name,
+          capability: descriptor.capability,
+          requires_approval: descriptor.effect == "write",
+          requires_external_action: descriptor.effect == "write",
+        },
+      ]
   }
   return out
 }
@@ -156,13 +156,13 @@ pub fn payload_schema() {
 pub fn init(harness: Harness, ctx = nil) {
   GOOGLE_STATE = GOOGLE_STATE
     + {
-    initialized: true,
-    ctx: if type_of(ctx) == "dict" {
-      ctx
-    } else {
-      {}
-    },
-  }
+      initialized: true,
+      ctx: if type_of(ctx) == "dict" {
+        ctx
+      } else {
+        {}
+      },
+    }
   return GOOGLE_STATE
 }
 
@@ -175,9 +175,7 @@ pub fn activate(harness: Harness, bindings = []) {
     const binding_id = __text(
       binding?.binding_id ?? binding?.id
         ?? ("binding-"
-        + to_string(
-        len(webhook_bindings.keys()) + len(poll_bindings.keys()),
-      )),
+          + to_string(len(webhook_bindings.keys()) + len(poll_bindings.keys()))),
     )
     const kind = __text(binding?.kind ?? "webhook")
     if kind == "webhook" {
@@ -199,11 +197,7 @@ pub fn activate(harness: Harness, bindings = []) {
     }
   }
   GOOGLE_STATE = GOOGLE_STATE
-    + {
-    active: true,
-    webhook_bindings: webhook_bindings,
-    poll_bindings: poll_bindings,
-  }
+    + {active: true, webhook_bindings: webhook_bindings, poll_bindings: poll_bindings}
   return {
     provider: GOOGLE_WORKSPACE_PROVIDER_ID,
     bindings: len(webhook_bindings.keys()) + len(poll_bindings.keys()),
@@ -246,8 +240,7 @@ pub fn normalize_inbound(harness: Harness, raw) {
   }
   const expected_token = __text(
     raw?.channel_token ?? raw?.verification_token ?? raw?.metadata?.channel_token
-      ?? GOOGLE_STATE.ctx
-      ?.channel_token,
+      ?? GOOGLE_STATE.ctx?.channel_token,
   )
   const provided_token = __text(__header(headers, "x-goog-channel-token"))
   if expected_token != "" {
@@ -452,7 +445,7 @@ fn __action_dispatch_error(error) -> ExternalActionAdapterResult {
   const code = __action_error_code(error)
   if type_of(status) == "int" && status >= 400 && status < 500 && status != 408
     && status
-    != 429 {
+      != 429 {
     return {outcome: "rejected", error_code: code}
   }
   return __action_indeterminate(code)
@@ -524,26 +517,26 @@ pub fn poll_tick(harness: Harness, ctx) {
     }
     events = events
       + [
-      {
-        provider: GOOGLE_WORKSPACE_PROVIDER_ID,
-        kind: event_kind,
-        occurred_at: changed_at,
-        dedupe_key: "google_workspace:" + event_kind + ":" + file_id + ":" + changed_at,
-        payload: {
+        {
           provider: GOOGLE_WORKSPACE_PROVIDER_ID,
-          event: event_kind,
-          event_type: event_kind,
-          file_id: file_id,
-          resource_id: file_id,
-          removed: change?.removed ?? false,
-          name: file?.name,
-          mime_type: file?.mimeType,
-          web_view_link: file?.webViewLink,
-          raw: change,
+          kind: event_kind,
+          occurred_at: changed_at,
+          dedupe_key: "google_workspace:" + event_kind + ":" + file_id + ":" + changed_at,
+          payload: {
+            provider: GOOGLE_WORKSPACE_PROVIDER_ID,
+            event: event_kind,
+            event_type: event_kind,
+            file_id: file_id,
+            resource_id: file_id,
+            removed: change?.removed ?? false,
+            name: file?.name,
+            mime_type: file?.mimeType,
+            web_view_link: file?.webViewLink,
+            raw: change,
+          },
+          source_refs: [__drive_file_ref(file_id, file)],
         },
-        source_refs: [__drive_file_ref(file_id, file)],
-      },
-    ]
+      ]
   }
   return {
     events: events,
@@ -828,9 +821,7 @@ fn __gmail_request_for_method(method, args, cfg) {
       __json_request(
         "GET",
         cfg.gmail_api_base_url + "/users/" + __gmail_user(args) + "/messages/"
-          + url_encode(
-          unwrap(message_id),
-        ),
+          + url_encode(unwrap(message_id)),
         nil,
         cfg,
         args,
@@ -938,9 +929,7 @@ fn __google_request(net: HarnessNet, request) {
         code: payload?.error?.status ?? payload?.error ?? "google_workspace_error",
         message: payload?.error?.message
           ?? ("Google Workspace API request failed with status "
-          + to_string(
-          http_response.status,
-        )),
+            + to_string(http_response.status)),
       },
     )
   }
@@ -1171,9 +1160,7 @@ fn __drive_file_ref(file_id, file) {
 
 fn __event_dedupe_key(event, resource_id, channel_id, message_number) {
   return GOOGLE_WORKSPACE_PROVIDER_ID + ":" + __text(event) + ":" + __text(resource_id) + ":"
-    + __text(
-    channel_id,
-  )
+    + __text(channel_id)
     + ":"
     + __text(message_number)
 }
