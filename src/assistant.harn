@@ -226,10 +226,7 @@ fn __action_args(intent: ExternalActionIntent) -> Result<dict, GoogleAssistantEr
   }
   return Ok(
     intent.payload
-      + {
-      external_action_fingerprint: intent.fingerprint,
-      idempotency_key: intent.idempotency_key,
-    },
+      + {external_action_fingerprint: intent.fingerprint, idempotency_key: intent.idempotency_key},
   )
 }
 
@@ -346,9 +343,9 @@ fn __calendar_event_body(args: dict) -> Result<dict, GoogleAssistantError> {
   return Ok(
     event
       + {
-      extendedProperties: extended
-        + {private: private + {harnActionFingerprint: fingerprint}},
-    },
+        extendedProperties: extended
+          + {private: private + {harnActionFingerprint: fingerprint}},
+      },
   )
 }
 
@@ -373,7 +370,7 @@ fn __gmail_assistant_request(
   }
   if method == "gmail.drafts.create" || method == "gmail.drafts.update"
     || method
-    == "gmail.messages.send" {
+      == "gmail.messages.send" {
     const message = __gmail_message(args)
     if !is_ok(message) {
       return Err(unwrap_err(message))
@@ -485,7 +482,7 @@ fn __reconciliation_request(
   }
   const label = if intent.operation == "gmail.drafts.send"
     || intent.operation
-    == "gmail.messages.send" {
+      == "gmail.messages.send" {
     "sent"
   } else {
     "drafts"
@@ -557,7 +554,7 @@ fn __confirmed(
   }
   const kind = if intent.operation == "gmail.drafts.create"
     || intent.operation
-    == "gmail.drafts.update" {
+      == "gmail.drafts.update" {
     "drafts"
   } else {
     "messages"
@@ -574,7 +571,7 @@ fn __dispatch_error(error: GoogleAssistantError) -> ExternalActionAdapterResult 
   const code = __error_code(error)
   if type_of(status) == "int" && status >= 400 && status < 500 && status != 408
     && status
-    != 429 {
+      != 429 {
     return __failed(code)
   }
   return __indeterminate(code)
