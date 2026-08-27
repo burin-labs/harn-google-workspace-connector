@@ -31,7 +31,7 @@ pub fn assert_google_workspace_interface(harness: Harness) {
 }
 
 /** Build Google Drive push-channel headers. */
-pub fn drive_push_headers(token = "test-token", extra = nil) {
+pub fn drive_push_headers(token: any = "test-token", extra: any = nil) {
   return {
     "x-goog-channel-id": "chan_123",
     "x-goog-resource-id": "resource_123",

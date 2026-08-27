@@ -14,7 +14,7 @@ import {
 } from "../src/lib"
 import { expect, expect_eq } from "./assertions"
 
-fn grant(intent) {
+fn grant(intent: any) {
   return external_action_grant(
     intent,
     {
