@@ -6,7 +6,7 @@ import {
   request_descriptor,
   shutdown,
 } from "../src/lib"
-import { expect, expect_eq } from "./assertions"
+import { expect, expect_eq } from "../testdata/assertions"
 
 pipeline test_call_smoke(harness: Harness) {
   shutdown(harness)

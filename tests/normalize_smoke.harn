@@ -1,6 +1,6 @@
 import { init, normalize_inbound, shutdown } from "../src/lib"
-import { expect, expect_eq } from "./assertions"
-import { assert_google_workspace_interface, drive_push_headers } from "./helpers"
+import { expect, expect_eq } from "../testdata/assertions"
+import { assert_google_workspace_interface, drive_push_headers } from "../testdata/helpers"
 
 pipeline test_normalize_smoke(harness: Harness) {
   const token = "test-token"

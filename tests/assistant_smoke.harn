@@ -12,7 +12,7 @@ import {
   request_descriptor,
   shutdown,
 } from "../src/lib"
-import { expect, expect_eq } from "./assertions"
+import { expect, expect_eq } from "../testdata/assertions"
 
 fn grant(intent: any) {
   return external_action_grant(
