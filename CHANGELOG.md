@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Encode query parameters with value sorting so outbound reads work on runtimes
+  with in-place collection methods.
 - Fix Google Desktop app setup to use PKCE without a client secret and include
   the required client ID in the generated setup command.
 - Add separately governed Calendar free/busy, event read/write, Gmail draft,

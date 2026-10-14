@@ -640,7 +640,7 @@ fn __descriptor(
 
 fn __query_url(url: string, query: dict) -> string {
   let parts: list<string> = []
-  for key in query.keys().sort() {
+  for key in query.keys().sorted() {
     const value = query[key]
     if value != nil && trim(to_string(value)) != "" {
       parts = parts + [url_encode(key) + "=" + url_encode(to_string(value))]
