@@ -174,8 +174,8 @@ pub fn activate(harness: Harness, bindings: any = []) {
   for binding in bindings ?? [] {
     const binding_id = __text(
       binding?.binding_id ?? binding?.id
-        ?? ("binding-"
-          + to_string(len(webhook_bindings.keys()) + len(poll_bindings.keys()))),
+        ?? "binding-"
+          + to_string(len(webhook_bindings.keys()) + len(poll_bindings.keys())),
     )
     const kind = __text(binding?.kind ?? "webhook")
     if kind == "webhook" {
@@ -928,8 +928,8 @@ fn __google_request(net: HarnessNet, request: any) {
         status: http_response.status,
         code: payload?.error?.status ?? payload?.error ?? "google_workspace_error",
         message: payload?.error?.message
-          ?? ("Google Workspace API request failed with status "
-            + to_string(http_response.status)),
+          ?? "Google Workspace API request failed with status "
+            + to_string(http_response.status),
       },
     )
   }
@@ -1019,7 +1019,7 @@ fn __query_params(args: any) {
 
 fn __with_query(url: any, query: any) {
   let parts = []
-  for key in query.keys().sort() {
+  for key in query.keys().sorted() {
     const value = query[key]
     if value != nil && __text(value) != "" {
       parts = parts + [url_encode(key) + "=" + url_encode(to_string(value))]
